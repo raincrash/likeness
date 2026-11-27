@@ -46,6 +46,8 @@ Everything runs locally in the page. No video or tracking data leaves the machin
   <img src="docs/images/vrm-wireframe.jpg" width="49%" alt="Sample VRM in wireframe with arms and fingers driven" />
   <img src="docs/images/demo-vrm.jpg" width="49%" alt="Sample VRM driven live: peace sign and a wave" />
   <img src="docs/images/demo-stream.jpg" width="49%" alt="Demo app: Stream tab with the live frame JSON" />
+  <img src="docs/images/vrm-angle-1.jpg" width="49%" alt="Sample VRM from a three-quarter angle: elbows clear of the body, hands in front of the chest" />
+  <img src="docs/images/vrm-angle-2.jpg" width="49%" alt="Sample VRM from a higher three-quarter angle on the other side" />
 </p>
 <p align="center">
   <img src="docs/images/teeth-wireframe.jpg" width="98%" alt="Wireframe close-up mid-word: jaw and lips open the mouth, with teeth and mouth interior visible" />

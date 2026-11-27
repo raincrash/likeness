@@ -93,7 +93,8 @@ interface ArmRig {
 const _v0 = new THREE.Vector3(), _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
 const _S = new THREE.Vector3(), _E = new THREE.Vector3(), _T = new THREE.Vector3(), _P = new THREE.Vector3();
 const _q0 = new THREE.Quaternion(), _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
-const _qWrap = new THREE.Quaternion(), _qCorr = new THREE.Quaternion();
+const _qWrap = new THREE.Quaternion(), _qCorr = new THREE.Quaternion(), _qInv = new THREE.Quaternion();
+const _C = new THREE.Vector3(), _L = new THREE.Vector3();
 const _m0 = new THREE.Matrix4();
 const _quat4 = new Float32Array(4), _part4 = new Float32Array(4);
 
@@ -115,6 +116,8 @@ export class VrmAvatar {
   private readonly gaze = new Float32Array(2);
   private readonly neck: THREE.Object3D | null;
   private readonly head: THREE.Object3D | null;
+  /** Upper torso bone, used to keep the hands clear of the body. */
+  private readonly chest: THREE.Object3D | null;
   private readonly arms: [ArmRig, ArmRig];
   private readonly headPos = new THREE.Vector3(0, 0, -0.6);
 
@@ -177,6 +180,7 @@ export class VrmAvatar {
     const bone = (name: string) => h.getNormalizedBoneNode(name as VRMHumanBoneName);
     this.neck = bone("neck");
     this.head = bone("head");
+    this.chest = bone("upperChest") ?? bone("chest") ?? bone("spine");
     h.resetNormalizedPose();
     this.scene.updateMatrixWorld(true);
     this.arms = [this.makeArm("left", +1, bone), this.makeArm("right", -1, bone)];
@@ -324,6 +328,42 @@ export class VrmAvatar {
     }
   }
 
+  /**
+   * Tracked wrist relative to the head (camera metres, x/y/z in the camera frame), robust to depth
+   * error. MediaPipe's hand depth is far less reliable than the head's, and a wrong depth also scales
+   * the sideways position (pixels are turned into metres at that depth). So: take the wrist's image
+   * direction, re-project it at the head's depth (accurate lateral and vertical offsets), and trust
+   * only a damped, clamped share of the hand's own depth relative to the head.
+   */
+  private wristRelativeToHead(J: Float32Array, out: THREE.Vector3): THREE.Vector3 {
+    const wz = J[3 * WRIST + 2], hz = this.headPos.z;
+    if (!(wz < -1e-3) || !(hz < -1e-3)) return out.fromArray(J, 3 * WRIST).sub(this.headPos);
+    const k = hz / wz; // both negative (in front of the camera): rescale to the head's depth
+    const towardsCamera = Math.min(0.3, Math.max(-0.1, 0.4 * (wz - hz)));
+    return out.set(J[3 * WRIST] * k - this.headPos.x, J[3 * WRIST + 1] * k - this.headPos.y, towardsCamera);
+  }
+
+  /**
+   * Keeps a wrist target out of the torso: tracked hands are positioned relative to the head, and a
+   * real body is deeper than the tracked depth suggests, so held near the chest the avatar's hands
+   * would sink into its own chest. Pushes the target in front of the chest and out to the side.
+   * T is in world space; `scale` is avatar arm length / human arm length.
+   */
+  private keepClearOfBody(T: THREE.Vector3, sign: number, scale: number) {
+    if (!this.chest) return;
+    this.chest.getWorldPosition(_C);
+    _qInv.copy(_qWrap).invert();
+    const local = _L.copy(T).sub(_C).applyQuaternion(_qInv); // wrapper frame: x = avatar's left, z = forward
+    const minForward = 0.17 * scale, minSide = 0.1 * scale;
+    // Only near chest height: hands far above or below the torso can go anywhere.
+    const nearTorso = local.y > -0.3 * scale && local.y < 0.3 * scale;
+    if (nearTorso) {
+      if (local.z < minForward) local.z = minForward;
+      if (sign * local.x < minSide) local.x = sign * minSide;
+    }
+    T.copy(local.applyQuaternion(_qWrap)).add(_C);
+  }
+
   private solveArm(arm: ArmRig, ik: boolean) {
     const { upper, lower, hand } = arm;
     if (!upper || !lower || !hand) return;
@@ -361,9 +401,12 @@ export class VrmAvatar {
       const scale = (L1 + L2) / HUMAN_ARM_LENGTH;
       // Anchor: avatar head centre; target = anchor + wrap * (wrist - trackedHead) * scale.
       this.getHeadPosition(_P).add(_v0.set(0, HEAD_CENTRE_ABOVE_HEAD_BONE * scale, 0).applyQuaternion(_qWrap));
-      _T.fromArray(J, 3 * WRIST).sub(this.headPos).multiplyScalar(scale).applyQuaternion(_qWrap).add(_P);
+      this.wristRelativeToHead(J, _T).multiplyScalar(scale).applyQuaternion(_qWrap).add(_P);
+      this.keepClearOfBody(_T, arm.sign, scale);
+      // Pole: elbows point down and out to the side, only slightly back (a natural carrying angle),
+      // so the upper arm does not fold into the torso when the hands are near the chest.
       twoBoneIk(upper, lower, arm.upperDir, arm.lowerDir, _S, _T, L1, L2,
-        _v1.set(arm.sign * 0.35, -1, -0.5).applyQuaternion(_qWrap));
+        _v1.set(arm.sign * 0.9, -1, -0.15).applyQuaternion(_qWrap));
       if (haveOrientation) setWorldQuaternion(hand, _q1);
     }
 

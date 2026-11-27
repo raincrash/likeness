@@ -119,9 +119,14 @@ are reported for one side, the higher score wins.
    is built from the 21 joints and from the avatar's rest pose (hand, middle/index/little proximal
    bones). The rotation between the two frames is applied to the rest orientation of the hand.
 2. **Arms (two-bone IK, `arms: true`).** The wrist target is the avatar's head centre (head bone
-   + 8 cm) + (tracked wrist − tracked head centre) × (avatar arm length / 0.55 m). The elbow stays in
-   the plane of shoulder, target and a down-back-outward pole. Out-of-reach targets are clamped to
-   99.9% of arm length.
+   + 8 cm) + (tracked wrist − tracked head centre) × (avatar arm length / 0.55 m). Because MediaPipe's
+   hand depth is much less reliable than the head's (and a wrong depth also scales the sideways
+   offset), the wrist is re-projected at the head's depth for its sideways and vertical offset, and
+   only a damped, clamped share of its own depth is used (−10 to +30 cm towards the camera). Near
+   chest height the target is kept at least 17 cm in front of the chest and 10 cm out to the side
+   (scaled to the avatar), so hands never sink into the torso. The elbow stays in the plane of
+   shoulder, target and a mostly outward, slightly downward and backward pole (a natural carrying
+   angle), and out-of-reach targets are clamped to 99.9% of arm length.
 3. **Fingers.** Each finger bone (VRM 1.0 names; three-vrm renames VRM 0.x thumbs) gets a minimal-arc
    rotation so its rest direction (towards the next bone, read from the normalized rest pose) points
    along the tracked segment. Segments are expressed relative to the avatar's actual hand, so fingers

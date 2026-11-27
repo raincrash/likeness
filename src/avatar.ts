@@ -4,7 +4,7 @@ import { IctModel } from "./ict.js";
 import { createLook, type Look } from "./look.js";
 import { TextureBaker, bakeMeshFor, expressionScore, type Projection } from "./bake.js";
 import { HandRig } from "./hands.js";
-import { ARKIT_BLENDSHAPES, ictArkitName, type LikenessFrame } from "./frame.js";
+import { ARKIT_BLENDSHAPES, ictArkitName, type HandOutput, type LikenessFrame } from "./frame.js";
 import { assetUrl } from "./assets.js";
 
 /**
@@ -198,9 +198,36 @@ export class LikenessAvatar {
     }
     if (this.opts.hands !== false && frame.hands.length) {
       if (!this.hands) void this.loadHands();
-      else this.hands.updateFromOutputs(frame.hands, { cameraToScene: this.cameraToScene }, 0);
+      else this.hands.updateFromOutputs(this.placeHands(frame.hands), { cameraToScene: this.cameraToScene }, 0);
     }
   }
+
+  /**
+   * Moves each tracked hand (rigidly, keeping its size) so its wrist sits where the image says it is
+   * relative to the head: MediaPipe's hand depth is much less reliable than the head's, and a depth
+   * error also scales the sideways position. The wrist is re-projected at the head's depth, plus a
+   * damped, clamped share of its own depth offset (same rule as VrmAvatar).
+   */
+  private placeHands(hands: readonly HandOutput[]): HandOutput[] {
+    const hz = this.headPos.z;
+    return hands.map((h, i) => {
+      const w = h.joints[0];
+      if (!(w[2] < -1e-3) || !(hz < -1e-3)) return h;
+      const k = hz / w[2];
+      const towardsCamera = Math.min(0.3, Math.max(-0.1, 0.4 * (w[2] - hz)));
+      const dx = w[0] * k - w[0], dy = w[1] * k - w[1], dz = hz + towardsCamera - w[2];
+      const out = (this.placedHands[i] ??= { side: h.side, score: 0, joints: Array.from({ length: 21 }, () => [0, 0, 0] as [number, number, number]) });
+      out.side = h.side;
+      out.score = h.score;
+      h.joints.forEach((j, n) => {
+        const o = out.joints[n];
+        o[0] = j[0] + dx; o[1] = j[1] + dy; o[2] = j[2] + dz;
+      });
+      return out;
+    });
+  }
+
+  private placedHands: HandOutput[] = [];
 
   /** Sets expression weights directly (ICT names and order: model.expressionNames). */
   setExpressionWeights(weights: ArrayLike<number>): void {
