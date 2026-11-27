@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>likeness: tracking only</title>
+    <style>
+      body { margin: 24px; background: #0d0e11; color: #ddd; font: 13px ui-monospace, monospace; }
+      #bars div { display: grid; grid-template-columns: 180px 1fr; gap: 8px; align-items: center; }
+      #bars i { display: block; height: 6px; background: #3b82f6; transform-origin: left; }
+    </style>
+  </head>
+  <body>
+    <button id="go">Start camera</button>
+    <p id="pose"></p>
+    <div id="bars"></div>
+    <script type="module">
+      // Headless: no 3D, just LikenessFrames (52 ARKit blendshapes + head pose + hands).
+      import { LikenessTracker } from "../dist/standalone/likeness.js";
+
+      const tracker = await LikenessTracker.create({ hands: true });
+      tracker.on("frame", (f) => {
+        if (!f.face) return;
+        const top = Object.entries(f.face.blendshapes).sort((a, b) => b[1] - a[1]).slice(0, 12);
+        document.getElementById("bars").innerHTML = top
+          .map(([k, v]) => `<div><span>${k}</span><i style="transform:scaleX(${v})"></i></div>`)
+          .join("");
+        const [x, y, z, w] = f.face.head.rotation;
+        document.getElementById("pose").textContent =
+          `head quat ${[x, y, z, w].map((n) => n.toFixed(2))}, hands: ${f.hands.map((h) => h.side).join(", ") || "none"}`;
+      });
+      document.getElementById("go").onclick = () => tracker.start();
+    </script>
+  </body>
+</html>

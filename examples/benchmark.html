@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>likeness: benchmark</title>
+    <style>
+      body { margin: 0; background: #0d0e11; color: #ddd; font: 13px ui-monospace, Menlo, monospace; display: grid; grid-template-columns: 640px 1fr; gap: 16px; padding: 16px; }
+      #src { width: 640px; height: 360px; border: 1px solid #333; }
+      pre { margin: 0; white-space: pre-wrap; }
+      button { font: inherit; padding: 6px 12px; }
+    </style>
+  </head>
+  <body>
+    <div>
+      <div id="src"></div>
+      <p>Synthetic "webcam": the built-in avatar is animated with known expressions and head motion, rendered at 1280×720,
+        and streamed into the tracker as if it were a camera. Measures the full pipeline (MediaPipe + likeness) and how
+        well known expressions are recovered.</p>
+      <button id="run">Run benchmark (20 s)</button>
+      <label><input id="hands" type="checkbox" /> hand tracking on (no hands in view: measures palm-detection cost)</label>
+    </div>
+    <pre id="out">Not run yet.</pre>
+    <script type="module">
+      // Runs against the sources via `npm run dev` (open /examples/benchmark.html).
+      import { LikenessTracker, LikenessAvatar, setAssetBase } from "/src/lib.ts";
+      setAssetBase("/"); // data files are served from the project's public/ folder in dev
+
+      const out = document.getElementById("out");
+      const srcEl = document.getElementById("src");
+      const puppet = await LikenessAvatar.create({ container: srcEl, mirror: false, orbit: false, maxPixelRatio: 1 });
+      // Render the puppet at camera resolution regardless of the element's CSS size.
+      puppet.renderer.setPixelRatio(2);
+      const names = puppet.model.expressionNames;
+      const idx = (n) => names.indexOf(n);
+
+      // Known expression program: talking (jaw + lips), smiles, blinks, brows; head yaw/pitch sweep.
+      function program(t) {
+        const w = new Float32Array(names.length);
+        const talk = Math.max(0, Math.sin(t * 2 * Math.PI * 4.5)) * (0.5 + 0.5 * Math.sin(t * 0.9));
+        w[idx("jawOpen")] = 0.35 * talk;
+        w[idx("mouthLowerDown_L")] = w[idx("mouthLowerDown_R")] = 0.4 * talk;
+        const smile = Math.max(0, Math.sin(t * 0.7));
+        w[idx("mouthSmile_L")] = w[idx("mouthSmile_R")] = 0.8 * smile;
+        const blink = (t % 3.1) < 0.15 ? 1 : 0;
+        w[idx("eyeBlink_L")] = w[idx("eyeBlink_R")] = blink;
+        w[idx("browInnerUp_L")] = w[idx("browInnerUp_R")] = 0.6 * Math.max(0, Math.sin(t * 0.5 + 2));
+        const yaw = 0.35 * Math.sin(t * 0.6), pitch = 0.15 * Math.sin(t * 0.43);
+        return { w, yaw, pitch };
+      }
+
+      let t0 = performance.now(), truth = null;
+      puppet.onRender(() => {
+        const t = (performance.now() - t0) / 1000;
+        truth = program(t);
+        puppet.setExpressionWeights(truth.w);
+        const q = new puppet.camera.quaternion.constructor().setFromEuler(new (puppet.camera.rotation.constructor)(truth.pitch, truth.yaw, 0, "YXZ"));
+        puppet.setHeadRotation(q);
+      });
+
+      document.getElementById("run").onclick = async () => {
+        out.textContent = "Starting…";
+        const stream = puppet.renderer.domElement.captureStream(30);
+        const tracker = await LikenessTracker.create({ hands: document.getElementById("hands").checked });
+        const pairs = { jawOpen: [], mouthSmileLeft: [], eyeBlinkLeft: [] };
+        const yawErr = [];
+        let frames = 0;
+        tracker.on("frame", (f) => {
+          frames++;
+          if (!f.face || !f.face.calibrated || !truth) return;
+          pairs.jawOpen.push([truth.w[idx("jawOpen")], f.face.blendshapes.jawOpen + f.face.blendshapes.mouthLowerDownLeft]);
+          pairs.mouthSmileLeft.push([truth.w[idx("mouthSmile_L")], f.face.blendshapes.mouthSmileLeft]);
+          pairs.eyeBlinkLeft.push([truth.w[idx("eyeBlink_L")], f.face.blendshapes.eyeBlinkLeft]);
+          const [x, y, z, w] = f.face.head.rotation;
+          const yaw = Math.atan2(2 * (w * y + x * z), 1 - 2 * (y * y + x * x));
+          yawErr.push(Math.abs(yaw - truth.yaw) * 180 / Math.PI);
+        });
+        t0 = performance.now();
+        await tracker.start(stream);
+        const start = performance.now();
+        await new Promise((r) => setTimeout(r, 20000));
+        tracker.stop();
+        const secs = (performance.now() - start) / 1000;
+        const corr = (p) => {
+          const n = p.length, mx = p.reduce((a, b) => a + b[0], 0) / n, my = p.reduce((a, b) => a + b[1], 0) / n;
+          let sxy = 0, sxx = 0, syy = 0;
+          for (const [x, y] of p) { sxy += (x - mx) * (y - my); sxx += (x - mx) ** 2; syy += (y - my) ** 2; }
+          return sxy / Math.sqrt(sxx * syy);
+        };
+        const perf = tracker.perf.snapshot();
+        const sorted = [...yawErr].sort((a, b) => a - b);
+        const result = {
+          userAgent: navigator.userAgent,
+          video: `${tracker.video.videoWidth}x${tracker.video.videoHeight}`,
+          framesProcessed: frames,
+          trackedFps: +(frames / secs).toFixed(1),
+          stagesMs: Object.fromEntries(Object.entries(perf).map(([k, v]) => [k, { avg: +v.avg.toFixed(2), p95: +v.p95.toFixed(2) }])),
+          accuracy: {
+            headYawErrorDeg: { median: +sorted[Math.floor(sorted.length / 2)].toFixed(2), p95: +sorted[Math.floor(sorted.length * 0.95)].toFixed(2) },
+            correlationWithGroundTruth: Object.fromEntries(Object.entries(pairs).map(([k, p]) => [k, +corr(p).toFixed(3)])),
+          },
+        };
+        window.benchmarkResult = result;
+        out.textContent = JSON.stringify(result, null, 2);
+      };
+      window.runBenchmark = () => document.getElementById("run").click();
+    </script>
+  </body>
+</html>

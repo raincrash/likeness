@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>likeness: one-tag avatar</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0d0e11; color: #eee; font: 14px system-ui, sans-serif; }
+      likeness-avatar { position: fixed; inset: 0; }
+      button { position: fixed; left: 16px; top: 16px; z-index: 1; padding: 8px 14px; }
+    </style>
+    <!-- Built with `npm run build:lib`. Copy dist/standalone anywhere; assets/ must stay next to it. -->
+    <script type="module" src="../dist/standalone/element.js"></script>
+  </head>
+  <body>
+    <likeness-avatar hands></likeness-avatar>
+    <button id="go">Start camera</button>
+    <script type="module">
+      const el = document.querySelector("likeness-avatar");
+      document.getElementById("go").onclick = async (e) => {
+        e.target.remove();
+        await el.start();
+      };
+      el.addEventListener("frame", (e) => (window.lastFrame = e.detail));
+    </script>
+  </body>
+</html>

@@ -1,0 +1,44 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ES2020",
+    "moduleResolution": "Node",
+    "lib": [
+      "ES2020",
+      "DOM"
+    ],
+    "types": [
+      "node"
+    ],
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": ".test-build",
+    "rootDir": "."
+  },
+  "files": [
+    "src/solver.ts",
+    "tests/solver.test.ts",
+    "src/handMath.ts",
+    "src/handRetarget.ts",
+    "tests/hands.test.ts",
+    "src/sh.ts",
+    "src/bakecpu.ts",
+    "tests/bake.test.ts",
+    "src/vrmMapping.ts",
+    "tests/vrm-mapping.test.ts",
+    "src/stream.ts",
+    "tests/stream.test.ts",
+    "src/ict.ts",
+    "src/landmarkModel.ts",
+    "src/driver.ts",
+    "src/tracker.ts",
+    "src/frame.ts",
+    "src/frameBuilder.ts",
+    "tests/synthetic.ts",
+    "tests/landmarkModel.test.ts",
+    "tests/driver.test.ts",
+    "tests/frame.test.ts",
+    "src/tracking.ts",
+    "tests/tracking.test.ts"
+  ]
+}

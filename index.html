@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="likeness: webcam face, lip-sync and hand tracking that drives a 3D avatar, or yours, live in the browser." />
+    <title>likeness</title>
+    <link rel="stylesheet" href="/src/demo/style.css" />
+  </head>
+  <body>
+    <div id="stage"></div>
+
+    <header id="topbar">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="10" r="6.5" /><path d="M5 21c1.5-3.5 4-5 7-5s5.5 1.5 7 5" /></svg>
+        <span>likeness</span>
+      </div>
+      <div class="chips">
+        <span class="chip" id="chip-camera" data-state="off">camera</span>
+        <span class="chip" id="chip-face" data-state="off">face</span>
+        <span class="chip" id="chip-hands" data-state="off">hands</span>
+        <span class="chip" id="chip-stream" data-state="off" hidden>stream</span>
+        <span class="chip mono" id="chip-fps">– fps</span>
+      </div>
+      <div class="actions">
+        <button id="btn-camera" class="primary">Start camera</button>
+        <button id="btn-scan" disabled title="Capture your head shape and skin (~10 s)">Scan my face</button>
+        <button id="btn-record" disabled title="Record the avatar view as a video">Record</button>
+        <button id="btn-stage" title="Hide the UI for OBS / screen capture (Esc to exit)">Stage mode</button>
+        <button id="btn-panel" class="icon" title="Settings" aria-label="Toggle settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></svg>
+        </button>
+      </div>
+    </header>
+
+    <section id="welcome">
+      <h1>Your face, live in 3D.</h1>
+      <p>Webcam face, lip-sync and hand tracking that drives a 3D avatar, or <em>your own</em> VRM, VTuber app or game engine.
+        Everything runs locally in your browser; no video leaves your machine.</p>
+      <div class="row">
+        <button id="btn-welcome-start" class="primary big">Start camera</button>
+        <label class="button big">Use a video file<input id="video-file" type="file" accept="video/*" hidden /></label>
+        <button id="btn-puppet" class="big" title="Tracks an animated synthetic face instead of your webcam">No camera? Try a demo face</button>
+      </div>
+      <p class="fine">Tip: sit at arm's length, face a window or lamp, and relax your face for the first second while it calibrates.</p>
+    </section>
+
+    <div id="scan-overlay" hidden>
+      <div class="ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" /><circle id="scan-ring" cx="50" cy="50" r="46" /></svg></div>
+      <p id="scan-message">Hold still…</p>
+    </div>
+
+    <aside id="panel">
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="avatar" aria-selected="true">Avatar</button>
+        <button role="tab" data-tab="tracking">Tracking</button>
+        <button role="tab" data-tab="stream">Stream</button>
+        <button role="tab" data-tab="debug">Debug</button>
+      </nav>
+
+      <div class="tab" data-tab="avatar">
+        <h3>Look</h3>
+        <label class="toggle"><input id="opt-mirror" type="checkbox" checked /> Mirror</label>
+        <label class="toggle"><input id="opt-wireframe" type="checkbox" /> Wireframe</label>
+        <label class="field">Background
+          <select id="opt-background">
+            <option value="studio">Studio</option>
+            <option value="transparent">Transparent (OBS)</option>
+            <option value="#00b140">Green screen</option>
+            <option value="#0e0f12">Plain dark</option>
+          </select>
+        </label>
+        <h3>Your avatar</h3>
+        <p class="hint">Load a VRM (VRoid, VRM 0.x / 1.0) to drive it instead of the built-in head.</p>
+        <div class="row">
+          <label class="button">Load VRM…<input id="vrm-file" type="file" accept=".vrm,.glb" hidden /></label>
+          <button id="btn-vrm-sample" title="VRM Consortium sample model (VRM Public License 1.0)">Try sample VRM</button>
+          <button id="btn-vrm-clear" disabled>Use built-in head</button>
+        </div>
+        <p class="hint" id="vrm-info"></p>
+        <h3>Face scan</h3>
+        <div class="row">
+          <button id="btn-download-texture" disabled>Download texture</button>
+          <button id="btn-clear-scan" disabled>Clear scan</button>
+        </div>
+        <h3>Identity <span class="hint">shape, N(0,1)</span></h3>
+        <div id="identity-sliders" class="sliders"></div>
+        <div class="row">
+          <button id="btn-random-identity">Randomize</button>
+          <button id="btn-reset-identity">Reset</button>
+        </div>
+      </div>
+
+      <div class="tab" data-tab="tracking" hidden>
+        <h3>Inputs</h3>
+        <label class="toggle"><input id="opt-hands" type="checkbox" checked /> Hands <span class="hint">both, + a few ms/frame</span></label>
+        <label class="toggle"><input id="opt-lipsync" type="checkbox" checked /> Lip-sync fit</label>
+        <label class="toggle"><input id="opt-mic" type="checkbox" /> Mic speech assist</label>
+        <label class="toggle"><input id="opt-refine" type="checkbox" /> Full-face refine <span class="hint">slower</span></label>
+        <label class="toggle"><input id="opt-pose" type="checkbox" checked /> Head pose</label>
+        <button id="btn-calibrate" title="Relax your face, then click">Recalibrate neutral</button>
+        <h3>Response</h3>
+        <div id="tuning-sliders" class="sliders wide"></div>
+        <h3>Live expressions</h3>
+        <div id="expr-bars"></div>
+      </div>
+
+      <div class="tab" data-tab="stream" hidden>
+        <h3>Drive your own avatar</h3>
+        <p class="hint">Run the bridge locally, then connect. It re-broadcasts frames over WebSocket and speaks the
+          <strong>VMC protocol</strong> (VSeeFace, VNyan, Warudo, VMagicMirror, Unity EVMC4U, Blender VMC4B).</p>
+        <pre class="code">npm run bridge</pre>
+        <label class="field">Bridge URL <input id="stream-url" type="text" value="ws://localhost:8765" spellcheck="false" /></label>
+        <div class="row">
+          <button id="btn-stream" class="primary">Connect</button>
+        </div>
+        <p class="hint" id="stream-info">Not connected.</p>
+        <h3>Frame preview</h3>
+        <pre class="code small" id="frame-preview">{}</pre>
+      </div>
+
+      <div class="tab" data-tab="debug" hidden>
+        <label class="toggle"><input id="opt-overlay" type="checkbox" checked /> Landmarks on video</label>
+        <label class="toggle"><input id="opt-preview" type="checkbox" checked /> Webcam preview</label>
+        <h3>Timings <span class="hint">ms, avg / p95</span></h3>
+        <pre class="code small" id="perf"></pre>
+        <h3>Status</h3>
+        <pre class="code small" id="debug-status"></pre>
+      </div>
+    </aside>
+
+    <div id="pip" hidden>
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay-canvas"></canvas>
+    </div>
+
+    <div id="toast" hidden></div>
+
+    <script type="module" src="/src/demo/main.ts"></script>
+  </body>
+</html>

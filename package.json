@@ -1,0 +1,84 @@
+{
+  "name": "likeness",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Webcam face, lip-sync and hand tracking that drives 3D avatars (yours, VRM, or VTuber apps via VMC), live in the browser",
+  "keywords": [
+    "face-tracking",
+    "avatar",
+    "vtuber",
+    "vmc",
+    "arkit",
+    "blendshapes",
+    "lip-sync",
+    "mediapipe",
+    "three.js",
+    "vrm",
+    "hand-tracking",
+    "3dmm"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "types": "./dist/types/lib.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/lib.d.ts",
+      "import": "./dist/lib/likeness.js"
+    },
+    "./tracking": {
+      "types": "./dist/types/lib-tracking.d.ts",
+      "import": "./dist/lib/tracking.js"
+    },
+    "./element": {
+      "types": "./dist/types/lib-element.d.ts",
+      "import": "./dist/lib/element.js"
+    },
+    "./vrm": {
+      "types": "./dist/types/lib-vrm.d.ts",
+      "import": "./dist/lib/vrm.js"
+    },
+    "./assets/*": "./dist/lib/assets/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/lib",
+    "dist/standalone",
+    "dist/types",
+    "bridge/*.mjs",
+    "bridge/README.md",
+    "README.md",
+    "LICENSE",
+    "docs"
+  ],
+  "bin": {
+    "likeness-bridge": "bridge/likeness-bridge.mjs"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "bridge": "node bridge/likeness-bridge.mjs",
+    "test": "tsc -p tsconfig.test.json && node .test-build/tests/solver.test.js && node .test-build/tests/hands.test.js && node .test-build/tests/bake.test.js && node .test-build/tests/landmarkModel.test.js && node .test-build/tests/driver.test.js && node .test-build/tests/frame.test.js && node .test-build/tests/tracking.test.js && node .test-build/tests/vrm-mapping.test.js && node .test-build/tests/stream.test.js && node tests/osc.test.mjs && node tests/bridge.test.mjs",
+    "build:lib": "tsc -p tsconfig.lib.json && vite build -c vite.lib.config.ts && vite build -c vite.lib.config.ts --mode standalone",
+    "prepare": "npm run build:lib"
+  },
+  "peerDependencies": {
+    "three": ">=0.160.0"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "1.2.3",
+    "@pixiv/three-vrm": "3.5.5",
+    "ws": "8.22.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@types/three": "^0.187.0",
+    "@types/ws": "8.18.2",
+    "typescript": "5.9.3",
+    "vite": "4.5.14",
+    "three": "0.187.0"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}

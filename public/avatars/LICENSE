@@ -1,0 +1,21 @@
+VRM1_Constraint_Twist_Sample.vrm
+(c) 2022 pixiv Inc.
+
+Licensed under the VRM Public License 1.0: https://vrm.dev/licenses/1.0/
+(English text: https://vrm.dev/en/licenses/1.0/)
+
+The licence's terms are the Public License together with the "License Settings" embedded in the VRM file
+(extensions.VRMC_vrm.meta), which for this file are:
+
+  avatarPermission:               everyone
+  commercialUsage:                corporation
+  allowRedistribution:            true
+  modification:                   allowModificationRedistribution
+  creditNotation:                 unnecessary
+  allowExcessivelyViolentUsage:   true
+  allowExcessivelySexualUsage:    true
+  allowPoliticalOrReligiousUsage: true
+  allowAntisocialOrHateUsage:     false
+
+Source: https://github.com/vrm-c/vrm-specification/tree/master/samples/VRM1_Constraint_Twist_Sample
+This file is distributed unmodified. It is not covered by the MIT licence of the surrounding repository.

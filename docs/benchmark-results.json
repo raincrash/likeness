@@ -1,0 +1,25 @@
+{
+  "machine": "Apple M5 Pro, 48 GB, macOS 27.0.1, Chromium 156",
+  "method": "examples/examples/benchmark.html: the built-in avatar animated with known expressions and head motion, rendered at 1280x720 and fed to LikenessTracker as a 30 fps camera stream for 20 s",
+  "face_only": {
+    "trackedFps": 29.9,
+    "stagesMs": { "faceDetect": { "avg": 7.05, "p95": 9.9 }, "drive": { "avg": 0.09, "p95": 0.2 }, "frame": { "avg": 0.14, "p95": 0.2 }, "trackTotal": { "avg": 7.19, "p95": 10.0 } },
+    "accuracy": { "headYawErrorDeg": { "median": 1.93, "p95": 4.48 }, "correlationWithGroundTruth": { "jawOpen": 0.798, "mouthSmileLeft": 0.933, "eyeBlinkLeft": 0.983 } }
+  },
+  "face_and_hands": {
+    "trackedFps": 26.1,
+    "stagesMs": { "faceDetect": { "avg": 6.33, "p95": 7.8 }, "handDetect": { "avg": 7.02, "p95": 10.1 }, "drive": { "avg": 0.07, "p95": 0.2 }, "trackTotal": { "avg": 13.44, "p95": 18.4 } }
+  },
+  "node_micro": {
+    "landmarkFit_50comps_468lmk_ms": 2.04,
+    "bake_cpu_per_view_ms": 0.52,
+    "fitShading_1500_samples_ms": 1.65
+  },
+  "sizes": {
+    "ict.bin_MB": 10.9,
+    "ict-landmarks_kB": 442,
+    "hand_glbs_kB": "see public/hands",
+    "dist_lib_likeness_js_kB": 119,
+    "dist_lib_likeness_js_gzip_kB": 37
+  }
+}

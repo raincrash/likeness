@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>likeness: render frames from the bridge</title>
+    <style>html, body, #stage { margin: 0; height: 100%; background: #0d0e11; }</style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <script type="module">
+      // Renders frames received from `npm run bridge` (e.g. tracked on another tab or machine).
+      import { LikenessAvatar } from "../dist/standalone/likeness.js";
+
+      const avatar = await LikenessAvatar.create({ container: document.getElementById("stage") });
+      const ws = new WebSocket(new URLSearchParams(location.search).get("bridge") ?? "ws://localhost:8765");
+      ws.onmessage = (e) => avatar.apply(JSON.parse(e.data));
+    </script>
+  </body>
+</html>
