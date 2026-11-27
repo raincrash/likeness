@@ -124,6 +124,8 @@ export class LikenessTracker {
   private frameWaiting = false;
   /** Frames in a row without a tracked hand (see HAND_IDLE_FRAMES). */
   private framesWithoutHands = 0;
+  /** Width of the last processed frame (process() can be given any video, not only this.video). */
+  private lastWidth = 0;
   private handsOn: boolean;
   private handFilter = new HandFilterBank();
   private meter: SpeechMeter | null = null;
@@ -238,9 +240,9 @@ export class LikenessTracker {
   get ictWeights(): Float32Array { return this.driver.weights; }
   /** ICT expression names ("jawOpen", "mouthSmile_L", ...), the order of `ictWeights`. */
   get ictNames(): readonly string[] { return this.driver.expressionNames; }
-  /** Focal length (video pixels) assumed for the current video, from `hfov`. */
+  /** Focal length (video pixels) assumed for the last processed frame (or the current video), from `hfov`. */
   get focalPx(): number {
-    return focalFromFov(this.video.videoWidth || 1280, this.opts.hfov ?? DEFAULT_HFOV_DEG);
+    return focalFromFov(this.lastWidth || this.video.videoWidth || 1280, this.opts.hfov ?? DEFAULT_HFOV_DEG);
   }
 
   /** Restarts the neutral-face calibration (~1.5 s of frames; ask the user to relax their face). */
@@ -450,6 +452,7 @@ export class LikenessTracker {
   /** Turns detections into a LikenessFrame and emits it. */
   private finish(face: TrackFrame | null, handFrames: HandFrame[], ts: number, W: number, H: number, t0: number): LikenessFrame {
     const perf = this.perf;
+    this.lastWidth = W;
     const frame = perf.time("frame", () => {
       const focalPx = focalFromFov(W, this.opts.hfov ?? DEFAULT_HFOV_DEG);
       let faceOut = null;

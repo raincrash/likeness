@@ -4,7 +4,7 @@ Everything listed here is exported by one of the three entry points:
 
 | Entry point | Exports |
 |---|---|
-| `likeness` | `LikenessTracker`, `DEFAULT_CAMERA`, `LikenessAvatar`, `StreamClient`, `setAssetBase`, `assetBase`, `assetUrl`, `ARKIT_BLENDSHAPES`, `HAND_JOINTS`, `ictToArkit`, `defaultDriveOptions`, `LandmarkModel`, `headPose`, `matToQuat`, `DEFAULT_HFOV_DEG` |
+| `likeness` | `LikenessTracker`, `DEFAULT_CAMERA`, `LikenessAvatar`, `IctModel`, `StreamClient`, `setAssetBase`, `assetBase`, `assetUrl`, `ARKIT_BLENDSHAPES`, `HAND_JOINTS`, `ictToArkit`, `defaultDriveOptions`, `LandmarkModel`, `headPose`, `matToQuat`, `DEFAULT_HFOV_DEG` |
 | `likeness/tracking` | The tracking subset of `likeness` without three.js: `LikenessTracker`, `DEFAULT_CAMERA`, `StreamClient`, `setAssetBase`, `assetBase`, `assetUrl`, `ARKIT_BLENDSHAPES`, `HAND_JOINTS`, `ictToArkit`, `defaultDriveOptions`, `LandmarkModel`, `headPose`, `matToQuat`, `DEFAULT_HFOV_DEG` |
 | `likeness/element` | `LikenessAvatarElement` (and registers `<likeness-avatar>`) |
 | `likeness/vrm` | `VrmAvatar` |
@@ -101,6 +101,18 @@ Read and write them live through `tracker.options`. Defaults are `defaultDriveOp
 | `micGain` | `1` | Strength of the microphone speech assist. |
 | `refine` | `false` | Full-face landmark refinement of all expression weights (slower). |
 | `regularization`, `temporal`, `min`, `max`, `iterations` | `0.01`, `0.3`, `0`, `1`, `2` | Settings of the full-face refine fit. |
+
+## IctModel
+
+The ICT-FaceKit face model the built-in avatar renders, for custom renderers (`likeness` entry).
+
+| Member | Description |
+|---|---|
+| `IctModel.load(baseUrl)` | Loads `ict.json` and `ict.bin` from a folder (e.g. `assetUrl("ict")`). Resolves `null` if they're missing. |
+| `nV`, `nE`, `nI`, `expressionNames`, `tris`, `meta.parts` | Vertex, expression and identity counts; ICT expression names (the order of `tracker.ictWeights`); triangles (`nV`-space indices); per-part vertex and triangle ranges. |
+| `setIdentity(coeffs)` | Applies identity coefficients (e.g. from `tracker.fitIdentity()`) to `base`. |
+| `evaluate(weights, positions, normals?)` | Writes `base + Σ w·expression` into `positions` (`nV*3`), and the normals if given (unnormalised). |
+| `evaluateRender(weights, positions, normals)` | The same into UV-split render-vertex buffers (`nRender*3`). |
 
 ## LikenessAvatar
 
