@@ -47,9 +47,13 @@ Everything runs locally in the page. No video or tracking data leaves the machin
   <img src="docs/images/demo-vrm.jpg" width="49%" alt="Sample VRM driven live: peace sign and a wave" />
   <img src="docs/images/demo-stream.jpg" width="49%" alt="Demo app: Stream tab with the live frame JSON" />
 </p>
+<p align="center">
+  <img src="docs/images/teeth-wireframe.jpg" width="98%" alt="Wireframe close-up mid-word: jaw and lips open the mouth, with teeth and mouth interior visible" />
+</p>
 <p align="center"><sub>
-  The tracked performer in these shots is the demo app's built-in <em>demo face</em>, an animated synthetic
-  head rendered to video and tracked by MediaPipe exactly like a webcam.
+  Mid-word close-up: the tracked jaw and lip shapes open the full mouth interior, teeth and gums included.
+  The performer in these shots is the demo app's built-in <em>demo face</em>, an animated synthetic head
+  rendered to video and tracked by MediaPipe exactly like a webcam.
 </sub></p>
 
 ## Quick start
