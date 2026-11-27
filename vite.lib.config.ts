@@ -13,6 +13,10 @@ export default defineConfig(({ mode }) => {
   const outDir = resolve(__dirname, standalone ? "dist/standalone" : "dist/lib");
   return {
     publicDir: false,
+    // Relative URLs (the worker), so the build works from any folder.
+    base: "./",
+    // The MediaPipe worker: an ES module at a fixed name in assets/, found through the asset base like the data files.
+    worker: { format: "es", rollupOptions: { output: { entryFileNames: "assets/detect-worker.js", chunkFileNames: "assets/detect-worker-[hash].js" } } },
     build: {
       outDir,
       emptyOutDir: true,

@@ -1,5 +1,7 @@
 import { FaceDriver, defaultDriveOptions } from "../src/driver.js";
-import { MEDIAPIPE_BLENDSHAPES } from "../src/tracker.js";
+import { FaceLandmarker } from "@mediapipe/tasks-vision";
+import { MEDIAPIPE_BLENDSHAPES, FACE_OVAL_LANDMARKS, LIP_LANDMARKS, MEDIAPIPE_VERSION } from "../src/mpConstants.js";
+import { readFileSync } from "node:fs";
 import { ARKIT_BLENDSHAPES, ictArkitName, ictToArkit, type LikenessFrame } from "../src/frame.js";
 import { buildFaceOutput, buildFrame, headPose, matToQuat } from "../src/frameBuilder.js";
 import { focalFromFov } from "../src/handMath.js";
@@ -102,6 +104,15 @@ for (const deg of [20, -20]) {
   check("only ICT-only shapes are unmapped", unmapped.every((n) => /^(PupilDilate|cheekRaiser)_[LR]$/.test(n)), unmapped.join(", "));
   const mismatched = names.filter((n, e) => (driver.sources[e] ?? null) !== ictArkitName(n));
   check("driver MediaPipe source == ARKit name of each ICT shape", mismatched.length === 0, mismatched.join(", ") || `${names.length} shapes`);
+}
+
+// mpConstants.ts copies a few MediaPipe constants so the main bundle needn't import MediaPipe.
+{
+  const set = (c: { start: number; end: number }[]) => [...new Set(c.flatMap((x) => [x.start, x.end]))].sort((a, b) => a - b).join();
+  const version = (JSON.parse(readFileSync("node_modules/@mediapipe/tasks-vision/package.json", "utf8")) as { version: string }).version;
+  check("mpConstants match the installed tasks-vision",
+    set(FaceLandmarker.FACE_LANDMARKS_FACE_OVAL) === FACE_OVAL_LANDMARKS.join() && set(FaceLandmarker.FACE_LANDMARKS_LIPS) === LIP_LANDMARKS.join() && version === MEDIAPIPE_VERSION,
+    `tasks-vision ${version}`);
 }
 
 if (failures) {

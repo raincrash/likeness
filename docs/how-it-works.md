@@ -10,7 +10,7 @@ This page explains the methods behind likeness. For the module map and data flow
 neutral mesh (26,719 vertices), identity PCA components (the first 20 of 100 are converted) and expression
 blendshapes named after ARKit's. likeness keeps 57 expressions: the 52 ARKit shapes, with `browInnerUp`
 and `cheekPuff` split per side and no `tongueOut`, plus pupil dilation and cheek raisers. The converter
-stores expressions as sparse int16 position and normal deltas, and the renderer evaluates
+stores expressions as sparse int16 position deltas and int8 normal deltas, and the renderer evaluates
 `neutral + Σ identity + Σ w·expression` on the CPU each frame, touching only the vertices each active
 expression moves.
 

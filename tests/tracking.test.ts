@@ -114,6 +114,40 @@ async function main() {
     check("lastProjection is null when the latest frame has no face", withFace && t.lastProjection === null && t.lastFrame?.face === null);
   }
 
+  // 5. Hands on but none in view: palm detection backs off to every 3rd frame, and resumes on every
+  //    frame once a hand shows up.
+  {
+    const t = make();
+    let calls = 0;
+    let handsOut: unknown[] = [];
+    const internals = t as unknown as { handTracker: unknown; handsOn: boolean };
+    internals.handTracker = { detect: () => { calls++; return handsOut; }, close() {} };
+    internals.handsOn = true;
+    const video = new FakeVideo() as unknown as HTMLVideoElement;
+    faceOut = trackFrame(canonicalFace());
+    let ts = 100;
+    for (let i = 0; i < 15; i++) t.process(video, (ts += 33));
+    const eager = calls;
+    calls = 0;
+    for (let i = 0; i < 30; i++) t.process(video, (ts += 33));
+    const idle = calls;
+    check("no hands in view: hand search runs every frame at first, then every 3rd", eager === 15 && idle === 10, `${eager}/15, then ${idle}/30`);
+    const hand = { handedness: "Left", score: 0.9, image: new Float32Array(63).fill(0.5), world: new Float32Array(63) };
+    handsOut = [hand];
+    for (let i = 0; i < 3; i++) t.process(video, (ts += 33));
+    calls = 0;
+    for (let i = 0; i < 6; i++) t.process(video, (ts += 33));
+    check("a hand in view: hand detection back to every frame", calls === 6, `${calls}/6`);
+  }
+
+  // 6. process() needs the main-thread backend.
+  {
+    const t = new Ctor(null, loadLiteModel(), {});
+    let threw = false;
+    try { t.process(new FakeVideo() as unknown as HTMLVideoElement, 10); } catch { threw = true; }
+    check("process() without a main-thread face tracker throws a clear error", threw);
+  }
+
   if (failures) {
     console.error(`${failures} check(s) failed`);
     process.exit(1);

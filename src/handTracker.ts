@@ -1,10 +1,9 @@
 import { FilesetResolver, HandLandmarker, type HandLandmarkerResult } from "@mediapipe/tasks-vision";
 import { subjectHandedness, type Handedness } from "./handMath.js";
+import { HAND_MODEL_URL, WASM_URL, type DetectSource } from "./mpConstants.js";
+import type { MediaPipeOptions } from "./tracker.js";
 
-// Keep in sync with the installed @mediapipe/tasks-vision version (same as tracker.ts).
-const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3/wasm";
-export const HAND_MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+export { HAND_MODEL_URL };
 
 export type { Handedness };
 /** HandFrame -> the public LikenessFrame hand (src/frame.ts), and the focal length from a horizontal FOV. */
@@ -24,12 +23,8 @@ export interface HandFrame {
 export class HandTracker {
   private constructor(private landmarker: HandLandmarker) {}
 
-  /**
-   * @param opts.wasmUrl folder with MediaPipe's tasks-vision wasm files (default: jsDelivr, pinned version).
-   * @param opts.modelUrl hand_landmarker.task (default: Google's model storage).
-   */
-  static async create(opts: { wasmUrl?: string; modelUrl?: string } = {}): Promise<HandTracker> {
-    const fileset = await FilesetResolver.forVisionTasks(opts.wasmUrl ?? WASM_URL);
+  static async create(opts: MediaPipeOptions = {}): Promise<HandTracker> {
+    const fileset = await FilesetResolver.forVisionTasks(opts.wasmUrl ?? WASM_URL, opts.esModule);
     const landmarker = await HandLandmarker.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: opts.modelUrl ?? HAND_MODEL_URL, delegate: "GPU" },
       runningMode: "VIDEO",
@@ -39,8 +34,8 @@ export class HandTracker {
   }
 
   /** Detects up to two hands. Call with the same video frame and timestamp as the face tracker. */
-  detect(video: HTMLVideoElement, timestampMs: number): HandFrame[] {
-    const res: HandLandmarkerResult = this.landmarker.detectForVideo(video, timestampMs);
+  detect(src: DetectSource, timestampMs: number): HandFrame[] {
+    const res: HandLandmarkerResult = this.landmarker.detectForVideo(src, timestampMs);
     const hands: HandFrame[] = [];
     res.landmarks.forEach((lm, h) => {
       const wl = res.worldLandmarks[h];

@@ -1,5 +1,8 @@
-import { FaceTracker, MEDIAPIPE_BLENDSHAPES } from "./tracker.js";
-import { HandTracker, focalFromFov } from "./handTracker.js";
+import { MEDIAPIPE_BLENDSHAPES, type TrackFrame } from "./mpConstants.js";
+import { focalFromFov } from "./handMath.js";
+import type { FaceTracker } from "./tracker.js";
+import type { HandFrame, HandTracker } from "./handTracker.js";
+import { DetectWorker, captureFrame, workersSupported } from "./detectClient.js";
 import { HandFilterBank } from "./handFilter.js";
 import { SpeechMeter } from "./audio.js";
 import { Perf } from "./perf.js";
@@ -27,7 +30,20 @@ export interface LikenessTrackerOptions {
   hfov?: number;
   /** Initial driver options (merged over the defaults); tune live through `tracker.options`. */
   options?: Partial<DriveOptions>;
+  /**
+   * Run MediaPipe in Web Workers (default true): face and hand detection run in parallel and off the
+   * main thread, so rendering never waits for tracking. Falls back to the main thread when the browser
+   * can't run MediaPipe in a worker. process() (custom loops) needs `worker: false`.
+   */
+  worker?: boolean;
+  /** The worker script (library builds: detect-worker.js in the assets folder). Default: assetUrl("detect-worker.js"). */
+  workerUrl?: string | URL;
 }
+
+/** Hands absent for this many frames: look for new ones only every HAND_SEARCH_INTERVAL frames. */
+const HAND_IDLE_FRAMES = 15;
+/** Palm detection, the costly part of hand tracking when no hand is in view, runs every Nth frame then. */
+const HAND_SEARCH_INTERVAL = 3;
 
 /** What start() accepts: a playing/playable video element, a MediaStream, or camera constraints. */
 export type TrackerSource = HTMLVideoElement | MediaStream | { camera?: MediaTrackConstraints };
@@ -65,7 +81,11 @@ type Listeners = { [K in keyof LikenessTrackerEvents]: Set<LikenessTrackerEvents
 export class LikenessTracker {
   /** Driver options, live-tunable: changes apply from the next frame. */
   readonly options: DriveOptions;
-  /** Rolling per-stage timings in ms (faceDetect, handDetect, drive, frame, trackTotal). */
+  /**
+   * Rolling per-stage timings in ms: faceDetect, handDetect (MediaPipe, in the worker when it runs in
+   * one), detectWait (worker mode: capture to results on the main thread), drive, frame, and trackTotal
+   * (video frame to emitted LikenessFrame).
+   */
   readonly perf = new Perf();
   /** The landmark-level face model (its identity is updated by fitIdentity()/setIdentity()). */
   readonly landmarks: LandmarkModel;
@@ -73,20 +93,37 @@ export class LikenessTracker {
   video: HTMLVideoElement;
   /** The last frame produced, or null. */
   lastFrame: LikenessFrame | null = null;
-  private faceLm: { x: number; y: number }[] | null = null;
+  private faceLm: Float32Array | null = null;
+  private faceLmPoints: { x: number; y: number }[] | null = null;
   private handLm: Float32Array[] = [];
 
   /**
    * Debug/overlay data, not part of LikenessFrame: the latest processed frame's face landmarks in
    * normalized image coordinates (x right, y down, 0..1, unmirrored), or null when no face was found.
    */
-  get lastFaceLandmarks(): readonly { x: number; y: number }[] | null { return this.faceLm; }
+  get lastFaceLandmarks(): readonly { x: number; y: number }[] | null {
+    const lm = this.faceLm;
+    if (!lm) return null;
+    if (!this.faceLmPoints) {
+      const pts = new Array<{ x: number; y: number }>(lm.length / 2);
+      for (let i = 0; i < pts.length; i++) pts[i] = { x: lm[i * 2], y: lm[i * 2 + 1] };
+      this.faceLmPoints = pts;
+    }
+    return this.faceLmPoints;
+  }
   /** Debug/overlay data: per detected hand, 21*3 normalized image landmarks (x right, y down, z relative depth). Empty when hands are off. */
   get lastHandLandmarks(): readonly Float32Array[] { return this.handLm; }
 
   private readonly driver: FaceDriver;
   private handTracker: HandTracker | null = null;
-  private handLoading: Promise<HandTracker> | null = null;
+  private handLoading: Promise<HandTracker | DetectWorker> | null = null;
+  private handWorker: DetectWorker | null = null;
+  /** Worker mode: a frame is being detected; newer frames wait for it. */
+  private busy = false;
+  /** Worker mode: a new frame arrived while busy. */
+  private frameWaiting = false;
+  /** Frames in a row without a tracked hand (see HAND_IDLE_FRAMES). */
+  private framesWithoutHands = 0;
   private handsOn: boolean;
   private handFilter = new HandFilterBank();
   private meter: SpeechMeter | null = null;
@@ -104,9 +141,10 @@ export class LikenessTracker {
   private disposed = false;
 
   private constructor(
-    private face: FaceTracker,
+    private face: FaceTracker | null,
     lm: LandmarkModel,
     private readonly opts: LikenessTrackerOptions,
+    private faceWorker: DetectWorker | null = null,
   ) {
     this.landmarks = lm;
     this.driver = new FaceDriver(lm, MEDIAPIPE_BLENDSHAPES);
@@ -116,13 +154,36 @@ export class LikenessTracker {
     this.video = LikenessTracker.makeVideo();
   }
 
-  /** Loads the landmark model and MediaPipe (and the hand model when `hands` is set). */
+  /**
+   * Loads the landmark model and MediaPipe (and the hand model when `hands` is set), in Web Workers
+   * unless `worker: false` or the browser can't (then on the main thread).
+   */
   static async create(opts: LikenessTrackerOptions = {}): Promise<LikenessTracker> {
+    const lmLoad = LandmarkModel.load(opts.modelUrl ?? assetUrl("ict"));
+    if (opts.worker !== false && workersSupported()) {
+      const [lm, face, hands] = await Promise.allSettled([
+        lmLoad,
+        DetectWorker.create("face", { wasmUrl: opts.wasmUrl, modelUrl: opts.faceModelUrl, workerUrl: opts.workerUrl }),
+        opts.hands ? DetectWorker.create("hands", { wasmUrl: opts.wasmUrl, modelUrl: opts.handModelUrl, workerUrl: opts.workerUrl }) : Promise.resolve(null),
+      ]);
+      if (lm.status === "rejected") {
+        for (const w of [face, hands]) if (w.status === "fulfilled") w.value?.close();
+        throw lm.reason;
+      }
+      if (face.status === "fulfilled" && hands.status === "fulfilled") {
+        const t = new LikenessTracker(null, lm.value, opts, face.value);
+        t.handWorker = hands.value;
+        return t;
+      }
+      for (const w of [face, hands]) if (w.status === "fulfilled") w.value?.close();
+      const reason = face.status === "rejected" ? face.reason : (hands as PromiseRejectedResult).reason;
+      console.warn("likeness: MediaPipe can't run in a worker here, tracking on the main thread.", reason);
+    }
     const mp = { wasmUrl: opts.wasmUrl };
     const [lm, face, hands] = await Promise.all([
-      LandmarkModel.load(opts.modelUrl ?? assetUrl("ict")),
-      FaceTracker.create({ ...mp, modelUrl: opts.faceModelUrl }),
-      opts.hands ? HandTracker.create({ ...mp, modelUrl: opts.handModelUrl }) : Promise.resolve(null),
+      lmLoad,
+      import("./tracker.js").then((m) => m.FaceTracker.create({ ...mp, modelUrl: opts.faceModelUrl })),
+      opts.hands ? import("./handTracker.js").then((m) => m.HandTracker.create({ ...mp, modelUrl: opts.handModelUrl })) : null,
     ]);
     const t = new LikenessTracker(face, lm, opts);
     t.handTracker = hands;
@@ -162,6 +223,8 @@ export class LikenessTracker {
   get isRunning(): boolean { return this.running; }
   /** Whether hand tracking is on. */
   get hands(): boolean { return this.handsOn; }
+  /** Where MediaPipe runs: "worker" (face and hands in parallel Web Workers) or "main" (this thread). */
+  get backend(): "worker" | "main" { return this.faceWorker ? "worker" : "main"; }
   /** Whether the microphone speech assist is on. */
   get mic(): boolean { return this.meter !== null; }
 
@@ -202,16 +265,25 @@ export class LikenessTracker {
   /** Turns hand tracking on or off; loads the hand model the first time. */
   async setHands(on: boolean): Promise<void> {
     this.handsOn = on;
-    if (!on || this.handTracker) return;
-    this.handLoading ??= HandTracker.create({ wasmUrl: this.opts.wasmUrl, modelUrl: this.opts.handModelUrl });
+    this.framesWithoutHands = 0;
+    if (!on || this.handTracker || this.handWorker) return;
+    const mp = { wasmUrl: this.opts.wasmUrl, modelUrl: this.opts.handModelUrl };
+    this.handLoading ??= this.faceWorker
+      ? DetectWorker.create("hands", { ...mp, workerUrl: this.opts.workerUrl })
+      : import("./handTracker.js").then((m) => m.HandTracker.create(mp));
     try {
-      this.handTracker = await this.handLoading;
+      const hands = await this.handLoading;
+      if (hands instanceof DetectWorker) this.handWorker = hands;
+      else this.handTracker = hands;
     } catch (err) {
       this.handsOn = false;
       this.handLoading = null;
       throw err;
     } finally {
-      if (this.disposed) this.handTracker?.close();
+      if (this.disposed) {
+        this.handTracker?.close();
+        this.handWorker?.close();
+      }
     }
   }
 
@@ -280,6 +352,7 @@ export class LikenessTracker {
   /** Stops the loop and releases a camera the tracker opened. Listeners stay; start() again to resume. */
   stop(): void {
     this.startGen++;
+    this.frameWaiting = false;
     if (this.loopKind === "rvfc") this.video.cancelVideoFrameCallback?.(this.loopHandle);
     else if (this.loopKind === "raf") cancelAnimationFrame(this.loopHandle);
     this.loopKind = null;
@@ -295,38 +368,89 @@ export class LikenessTracker {
     this.disposed = true;
     this.meter?.stop();
     this.meter = null;
-    this.face.close();
+    this.face?.close();
+    this.faceWorker?.close();
     this.handTracker?.close();
     this.handTracker = null;
+    this.handWorker?.close();
+    this.handWorker = null;
     for (const set of Object.values(this.listeners)) set.clear();
   }
 
   /**
    * Processes one video frame by hand, for custom loops or offline video (don't mix with start()).
-   * `timestampMs` must increase from call to call (e.g. video.currentTime * 1000 for a file); it
-   * also drives the temporal filters and becomes LikenessFrame.t. Emits "frame" (and
-   * "calibrated"), and returns the frame, or null if the video has no frame data yet.
+   * It runs MediaPipe on this thread, so create the tracker with `worker: false`. `timestampMs` must
+   * increase from call to call (e.g. video.currentTime * 1000 for a file); it also drives the temporal
+   * filters and becomes LikenessFrame.t. Emits "frame" (and "calibrated"), and returns the frame, or
+   * null if the video has no frame data yet.
    */
   process(video: HTMLVideoElement, timestampMs: number): LikenessFrame | null {
     if (this.disposed || video.readyState < 2 || !video.videoWidth) return null;
-    // MediaPipe rejects non-increasing timestamps.
-    // MediaPipe needs increasing timestamps. If the caller's clock jumps back (e.g. a looping file fed
-    // with currentTime), shift it forward by one frame past the last one instead of clamping, so the
-    // filters keep seeing realistic frame intervals.
+    const face = this.face;
+    if (!face) throw new Error("LikenessTracker: process() runs MediaPipe on the main thread; create the tracker with { worker: false }");
+    const ts = this.nextTimestamp(timestampMs);
+    const t0 = performance.now();
+    const perf = this.perf;
+    const faceFrame = perf.time("faceDetect", () => face.detect(video, ts));
+    const hands = this.handTracker;
+    const handFrames = hands && this.handsDue() ? perf.time("handDetect", () => hands.detect(video, ts)) : [];
+    return this.finish(faceFrame, handFrames, ts, video.videoWidth, video.videoHeight, t0);
+  }
+
+  // --- internals --------------------------------------------------------------
+
+  /**
+   * MediaPipe needs increasing timestamps. If the caller's clock jumps back (e.g. a looping file fed
+   * with currentTime), shift it forward by one frame past the last one instead of clamping, so the
+   * filters keep seeing realistic frame intervals.
+   */
+  private nextTimestamp(timestampMs: number): number {
     let ts = timestampMs + this.tsOffset;
     if (ts <= this.lastTs) {
       this.tsOffset += this.lastTs - ts + 1000 / 30;
       ts = timestampMs + this.tsOffset;
     }
     this.lastTs = ts;
+    return ts;
+  }
+
+  /** Whether to run hand detection on this frame (see HAND_IDLE_FRAMES). */
+  private handsDue(): boolean {
+    if (!this.handsOn) return false;
+    const n = this.framesWithoutHands;
+    return n < HAND_IDLE_FRAMES || n % HAND_SEARCH_INTERVAL === 0;
+  }
+
+  /** Worker mode: captures the current frame, detects face and hands in parallel, then finishes it here. */
+  private async processInWorkers(video: HTMLVideoElement, gen: number): Promise<void> {
+    const faceWorker = this.faceWorker!;
     const t0 = performance.now();
+    const ts = this.nextTimestamp(t0);
+    const W = video.videoWidth, H = video.videoHeight;
+    const handWorker = this.handWorker && this.handsDue() ? this.handWorker : null;
+    const frame = await captureFrame(video, ts);
+    let handFrame: VideoFrame | ImageBitmap | null = null;
+    try {
+      if (handWorker) handFrame = frame instanceof ImageBitmap ? await createImageBitmap(frame) : frame.clone();
+    } catch (err) {
+      frame.close();
+      throw err;
+    }
+    const [faceRes, handRes] = await Promise.all([faceWorker.detect(frame, ts), handFrame ? handWorker!.detect(handFrame, ts) : null]);
+    if (gen !== this.startGen || this.disposed) return; // stopped meanwhile
     const perf = this.perf;
+    perf.add("detectWait", performance.now() - t0);
+    perf.add("faceDetect", faceRes.ms);
+    if (handRes) perf.add("handDetect", handRes.ms);
+    const face = faceRes.type === "face" ? faceRes.face : null;
+    const hands = handRes?.type === "hands" ? handRes.hands : [];
+    this.finish(face, hands, ts, W, H, t0);
+  }
 
-    const face = perf.time("faceDetect", () => this.face.detect(video, ts));
-    const handFrames = this.handsOn && this.handTracker ? perf.time("handDetect", () => this.handTracker!.detect(video, ts)) : [];
-
+  /** Turns detections into a LikenessFrame and emits it. */
+  private finish(face: TrackFrame | null, handFrames: HandFrame[], ts: number, W: number, H: number, t0: number): LikenessFrame {
+    const perf = this.perf;
     const frame = perf.time("frame", () => {
-      const W = video.videoWidth, H = video.videoHeight;
       const focalPx = focalFromFov(W, this.opts.hfov ?? DEFAULT_HFOV_DEG);
       let faceOut = null;
       if (face) {
@@ -340,8 +464,10 @@ export class LikenessTracker {
       return buildFrame(ts, faceOut, hands);
     });
     perf.add("trackTotal", performance.now() - t0);
+    this.framesWithoutHands = handFrames.length ? 0 : this.framesWithoutHands + 1;
 
     this.faceLm = face ? face.normalized : null;
+    this.faceLmPoints = null;
     this.handLm = handFrames.map((h) => h.image);
     this.lastFrame = frame;
     this.emit("frame", frame);
@@ -351,8 +477,6 @@ export class LikenessTracker {
     }
     return frame;
   }
-
-  // --- internals --------------------------------------------------------------
 
   private schedule(): void {
     if (!this.running) return;
@@ -369,16 +493,40 @@ export class LikenessTracker {
   private tick(): void {
     if (!this.running) return;
     const v = this.video;
-    // rVFC fires once per new frame; with rAF, skip until the video has advanced.
+    // rVFC fires once per new frame; with rAF, skip until the video has advanced. In worker mode a
+    // frame that arrives while the previous one is still being detected is picked up when it's done.
     if (v.currentTime !== this.lastVideoTime && !v.paused) {
-      this.lastVideoTime = v.currentTime;
+      if (this.busy) this.frameWaiting = true;
+      else this.processLatest(v);
+    }
+    this.schedule();
+  }
+
+  private processLatest(v: HTMLVideoElement): void {
+    this.lastVideoTime = v.currentTime;
+    if (!this.faceWorker) {
       try {
         this.process(v, performance.now());
       } catch (err) {
         this.emit("error", toError(err));
       }
+      return;
     }
-    this.schedule();
+    this.busy = true;
+    const gen = this.startGen;
+    this.processInWorkers(v, gen)
+      .catch((err) => {
+        if (gen === this.startGen && !this.disposed) this.emit("error", toError(err));
+      })
+      .finally(() => {
+        this.busy = false;
+        // A newer frame arrived meanwhile: detect it now rather than at the next frame callback.
+        // (Not currentTime: for a live stream it keeps advancing between frames.)
+        if (this.frameWaiting && gen === this.startGen && this.running && v === this.video && !v.paused) {
+          this.frameWaiting = false;
+          this.processLatest(v);
+        }
+      });
   }
 
   private stopStream(): void {

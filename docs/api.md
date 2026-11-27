@@ -40,6 +40,8 @@ await tracker.start();
 | `handModelUrl` | string | Google model storage, `hand_landmarker.task` (float16) | MediaPipe hand model. |
 | `hfov` | number | `65` | Assumed horizontal field of view in degrees; used for head and hand positions only. |
 | `options` | `Partial<DriveOptions>` | | Initial driver options, merged over `defaultDriveOptions`. |
+| `worker` | boolean | `true` | Run MediaPipe in Web Workers: face and hands in parallel, off the main thread. Falls back to the main thread (with a console warning) when the browser can't. `process()` needs `false`. |
+| `workerUrl` | string \| URL | `assetUrl("detect-worker.js")` | The worker script. Library builds ship it in the assets folder; from source, your bundler builds it. |
 
 ### Methods
 
@@ -48,7 +50,7 @@ await tracker.start();
 | `start(source?)` | Starts tracking and resolves once frames flow. `source`: a `<video>` (used as is, played if paused), a `MediaStream`, or `{ camera?: MediaTrackConstraints }` (default `DEFAULT_CAMERA`: 1280x720, user-facing). Restarts calibration. |
 | `stop()` | Stops the loop and releases a camera the tracker opened. Listeners stay. |
 | `dispose()` | `stop()`, then releases MediaPipe, the microphone and all listeners. Not reusable afterwards. |
-| `process(video, timestampMs)` | Processes one frame by hand (custom loops, offline video). Timestamps must increase. Returns the frame, or `null` if the video has no data yet. Don't mix with `start()`. |
+| `process(video, timestampMs)` | Processes one frame by hand (custom loops, offline video), synchronously on the main thread: create the tracker with `worker: false`. Timestamps must increase. Returns the frame, or `null` if the video has no data yet. Don't mix with `start()`. |
 | `calibrate()` | Restarts the neutral-face calibration (45 face frames, about 1.5 s). |
 | `fitIdentity()` | Fits identity coefficients to the calibrated neutral face, applies them to the tracker's landmark model and returns them (`Float32Array`), or `null` before calibration. |
 | `setIdentity(coeffs)` | Applies saved identity coefficients to the landmark model. |
@@ -71,7 +73,8 @@ await tracker.start();
 | Property | Description |
 |---|---|
 | `options` | Live `DriveOptions`; changes apply from the next frame. |
-| `perf` | Rolling per-stage timings: `perf.snapshot()` returns `{ [stage]: { avg, p95, n } }` in ms for `faceDetect`, `handDetect`, `drive`, `frame`, `trackTotal`. |
+| `perf` | Rolling per-stage timings: `perf.snapshot()` returns `{ [stage]: { avg, p95, n } }` in ms for `faceDetect`, `handDetect` (MediaPipe, measured in the worker in worker mode), `detectWait` (worker mode: frame capture to results), `drive`, `frame`, `trackTotal` (video frame to emitted `LikenessFrame`). |
+| `backend` | `"worker"` or `"main"`: where MediaPipe runs. |
 | `video` | The tracked `<video>` (an idle, detached element owned by the tracker before `start()`). |
 | `lastFrame` | The last `LikenessFrame`, or `null`. |
 | `calibrated`, `calibration` | Calibration done (boolean) and progress (0..1). |

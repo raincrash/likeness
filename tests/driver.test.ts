@@ -1,5 +1,5 @@
 import { FaceDriver, defaultDriveOptions } from "../src/driver.js";
-import { MEDIAPIPE_BLENDSHAPES } from "../src/tracker.js";
+import { MEDIAPIPE_BLENDSHAPES } from "../src/mpConstants.js";
 import { matToQuat } from "../src/frameBuilder.js";
 import { canonicalFace, lowerLipDown, yaw, trackFrame, loadLiteModel, relativeRotation, rotationAngleDeg } from "./synthetic.js";
 

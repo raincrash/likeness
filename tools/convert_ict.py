@@ -5,8 +5,8 @@
 """Convert the ICT-FaceKit face model into likeness's browser format.
 
 Writes <out>/ict.bin + <out>/ict.json: the neutral mesh (metres), its vertex
-normals, triangles grouped by mesh part, sparse int16 expression deltas (with
-matching normal deltas), dense int16 identity deltas, and an embedding of the
+normals, triangles grouped by mesh part (uint16 indices), sparse int16 expression
+deltas (with int8 normal deltas), dense int16 identity deltas, and an embedding of the
 468 MediaPipe face-mesh landmarks onto the ICT face surface. Also writes
 <out>/ict-landmarks.json + .bin: a landmark-only model (~0.4 MB) for headless
 tracking (LandmarkModel in src/landmarkModel.ts).
@@ -110,11 +110,18 @@ def vertex_normals(verts: np.ndarray, tris: np.ndarray) -> np.ndarray:
     return n / np.where(length > 0, length, 1.0)
 
 
-def quantize(x: np.ndarray) -> tuple[np.ndarray, float]:
+def quantize(x: np.ndarray, bits: int = 16) -> tuple[np.ndarray, float]:
+    top = 2 ** (bits - 1) - 1
     maxabs = float(np.abs(x).max()) if x.size else 0.0
-    scale = (maxabs if maxabs > 0 else 1.0) / 32767.0
-    q = np.clip(np.round(x / scale), -32767, 32767).astype(np.int16)
+    scale = (maxabs if maxabs > 0 else 1.0) / top
+    q = np.clip(np.round(x / scale), -top, top).astype(np.int16 if bits == 16 else np.int8)
     return q, scale
+
+
+def index_array(x) -> np.ndarray:
+    """Vertex indices as uint16 when they fit (the ICT mesh has < 65536 vertices), else uint32."""
+    a = np.asarray(x)
+    return a.astype(np.uint16 if a.size == 0 or int(a.max()) < 65536 else np.uint32)
 
 
 # --- landmark embedding (same method as convert_flame.py) ------------------
@@ -348,7 +355,8 @@ def main() -> None:
         sel = np.nonzero((np.linalg.norm(delta, axis=1) > POS_EPS)
                          | (np.linalg.norm(nd, axis=1) > NORMAL_EPS))[0]
         dq, ds = quantize(delta[sel])
-        nq, ns = quantize(nd[sel])
+        # Normal deltas only shade the render mesh: 8 bits (about 1% of the largest change) is plenty.
+        nq, ns = quantize(nd[sel], bits=8)
         idx_list.append(sel.astype(np.uint32))
         dq_list.append(dq)
         nq_list.append(nq)
@@ -372,15 +380,15 @@ def main() -> None:
     arrays: dict[str, np.ndarray] = {
         "neutral": neutral.astype(np.float32),
         "normals": normals.astype(np.float32),
-        "tris": tris.astype(np.uint32),
+        "tris": index_array(tris),
         "expr_ptr": np.asarray(ptr, dtype=np.uint32),
-        "expr_index": np.concatenate(idx_list).astype(np.uint32),
+        "expr_index": index_array(np.concatenate(idx_list)),
         "expr_delta": np.concatenate(dq_list).astype(np.int16),
-        "expr_normal_delta": np.concatenate(nq_list).astype(np.int16),
+        "expr_normal_delta": np.concatenate(nq_list),
         "id_delta": id_q,
         "uv": uv.astype(np.float32),
-        "uv_vertex": uv_vertex.astype(np.uint32),
-        "uv_tris": uv_tris.astype(np.uint32),
+        "uv_vertex": index_array(uv_vertex),
+        "uv_tris": index_array(uv_tris),
     }
 
     # Verify quantisation on a few expressions.

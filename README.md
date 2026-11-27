@@ -1,8 +1,9 @@
 <h1 align="center">likeness</h1>
 
 <p align="center">
-  <strong>Real-time face, lip and hand tracking in the browser that drives 3D avatars.</strong><br/>
-  Your own VRM, a built-in scannable head, or any VTuber app and game engine over VMC.
+  <strong>A markerless motion-capture rig for any video source, running in the browser.</strong><br/>
+  Face, lips and both hands from a webcam, a video file, a screen share or a live stream, driving your own VRM,
+  a built-in scannable head, or any VTuber app and game engine over VMC.
 </p>
 
 <p align="center">
@@ -16,12 +17,53 @@
   <img src="docs/images/wireframe-three-quarter.jpg" width="100%" alt="Wireframe of the built-in head mid-word, with both hands tracked" />
 </p>
 
-likeness turns a webcam into a motion-capture rig. It tracks the face, lips and both hands with
-MediaPipe, refines the result with a morphable face model, and emits a compact, standard frame per video
-frame: the 52 ARKit blendshapes, head pose and hand joints in metres. Render it with the built-in avatar,
-drive your own VRM, or stream it to VSeeFace, VNyan, Warudo, Unity, Blender or your own code.
+> [!IMPORTANT]
+> **likeness is a motion-capture rig for any streamable video source.** Point it at a webcam, a recorded
+> video, a screen capture, a WebRTC call or a canvas, and it streams back performance data, frame by frame:
+> 52 ARKit blendshapes, head pose and 21 joints per hand, in metres. Developers can drop it into avatars,
+> games, video calls, animation pipelines and research tools with a few lines of TypeScript, or receive it
+> in any engine over VMC or WebSocket.
+
+It tracks the face, lips and both hands with MediaPipe, refines the result with a morphable face model, and
+emits a compact, standard frame per video frame. Render it with the built-in avatar, drive your own VRM, or
+stream it to VSeeFace, VNyan, Warudo, Unity, Unreal, Godot, Blender or your own code.
 
 Everything runs locally in the page. No video or tracking data leaves the machine.
+
+## Any video source
+
+The tracker takes anything the browser can play as video. If it plays in a `<video>` element or arrives as
+a `MediaStream`, it can be motion-captured.
+
+| Source | How |
+|---|---|
+| Webcam, capture card, virtual camera (OBS, phone-as-webcam apps) | `tracker.start()` or `tracker.start({ camera: { deviceId } })` |
+| Recorded video (MP4, WebM, MOV the browser can decode) | `tracker.start(videoElement)` in real time, or `tracker.process()` frame by frame |
+| Live streams (HLS or DASH, natively or through hls.js / dash.js) | `tracker.start(videoElement)` |
+| Screen or window capture | `tracker.start(await navigator.mediaDevices.getDisplayMedia())` |
+| WebRTC: a remote participant in a call | `tracker.start(new MediaStream([remoteVideoTrack]))` |
+| Canvas, WebGL or game output | `tracker.start(canvas.captureStream(30))` |
+
+The demo's built-in *demo face* uses that last row: an animated synthetic head rendered to a canvas and
+tracked exactly like a camera.
+
+## What developers build with it
+
+- **VTubing and live streaming.** Drive a VRM or a custom character in the browser, or send the motion to
+  VSeeFace, VNyan, Warudo and other VMC apps; add the stage mode to OBS as a browser source.
+- **Avatars in video calls and social apps.** Track the local camera, or a remote WebRTC stream, and show an
+  avatar instead of the face, keeping the real video on the device.
+- **Game and engine input.** Stream faces and hands into Unity, Unreal, Godot or Blender over VMC or plain
+  WebSocket JSON, for character control, NPC puppeteering or in-engine previews.
+- **Animation and previs from footage.** Run recorded performances through `process()` and keep the
+  per-frame ARKit curves, head pose and finger joints for retargeting onto rigs, keyframe cleanup or lip-sync.
+- **Digital humans and conversational agents.** Puppeteer talking heads from a performer's camera, or use a
+  person's recorded video as reference motion.
+- **Hand and face interaction.** Gesture controls, hands-free UI and expression-driven effects, from 21
+  metric joints per hand and 52 named expression weights.
+- **AR effects and try-on.** Head pose in metres plus the fitted face shape anchor glasses, masks and makeup.
+- **Research and analytics.** Batch-extract expression and pose time series from video for datasets,
+  user studies or lip-sync evaluation, with a documented, versioned frame format.
 
 ## Features
 
@@ -38,8 +80,9 @@ Everything runs locally in the page. No video or tracking data leaves the machin
   EVMC4U for Unity, VMC4B for Blender) and re-broadcasts JSON over WebSocket.
 - **Make it look like you.** A 10-second face scan fits the head shape to your face and bakes a de-lit skin
   texture from the webcam.
-- **Small and fast.** Tracking-only builds load about 245 kB of script and no three.js. About 7 ms per
-  frame for face tracking and 13 ms with both hands on an Apple M5 Pro.
+- **Small and fast.** MediaPipe runs in Web Workers, face and hands in parallel, so tracking takes about
+  0.3 ms of main-thread time per frame and never stalls rendering. Tracking-only builds put 66 kB of script
+  and no three.js on the main thread. See [benchmarks](docs/benchmarks.md).
 
 <p align="center">
   <img src="docs/images/demo-wireframe-hands.jpg" width="49%" alt="Demo app in wireframe: Tracking tab, two hands tracked" />
@@ -109,10 +152,32 @@ tracker.on("frame", (frame) => {
   for (const hand of frame.hands) console.log(hand.side, hand.joints[8]); // index fingertip
 });
 
-await tracker.start(); // default webcam; also accepts a <video> element or MediaStream
+await tracker.start(); // default webcam; also accepts a <video> element or any MediaStream
 ```
 
 The first ~1.5 s calibrate the user's neutral face. Call `tracker.calibrate()` to redo it.
+
+### Capture a recorded video, frame by frame
+
+```ts
+import { LikenessTracker, type LikenessFrame } from "likeness/tracking";
+
+const video = document.querySelector("video")!;           // e.g. <video src="performance.mp4" muted>
+const tracker = await LikenessTracker.create({ hands: true, worker: false }); // process() runs in this thread
+const take: LikenessFrame[] = [];
+
+video.requestVideoFrameCallback(function step(_now, meta) {
+  const frame = tracker.process(video, meta.mediaTime * 1000); // timestamps from the video's own clock
+  if (frame) take.push(frame);
+  if (!video.ended) video.requestVideoFrameCallback(step);
+});
+video.playbackRate = 0.5;  // slower than real time, so no frame is skipped on slower machines
+await video.play();
+video.onended = () => console.log(JSON.stringify(take)); // one LikenessFrame per video frame
+```
+
+The first ~45 face frames calibrate the neutral face, so start the take on a relaxed face (or trim the lead-in).
+To capture in real time instead, call `tracker.start(video)`: it tracks whatever the element is playing.
 
 ### Render the built-in avatar
 
@@ -218,14 +283,17 @@ See [Demo app](docs/demo.md).
 
 ## Performance
 
-Apple M5 Pro, Chromium, 1280×720 input. Accuracy is measured against ground truth from a synthetic camera.
+Apple M5 Pro, Chromium, 1280×720 input at 30 fps. Accuracy is measured against ground truth from a synthetic
+camera.
 
 | | Face | Face + hands |
 |---|---|---|
-| Tracking cost per frame (avg / p95) | 7.2 / 10.0 ms | 13.4 / 18.4 ms |
-| likeness solver share | 0.1 ms | 0.1 ms |
-| Head yaw error | 1.9° median | |
-| Blink / smile correlation | 0.98 / 0.93 | |
+| Main-thread time per frame (MediaPipe runs in Web Workers) | 0.3 ms | 0.3 ms |
+| MediaPipe detection per frame, in the workers (avg, varies with GPU clocks) | 10–14 ms | 10–16 ms |
+| likeness solver share | 0.2 ms | 0.2 ms |
+| Frames tracked from a 30 fps source | 29.8 | 29.7 |
+| Head yaw error | 1.5° median | |
+| Blink / smile correlation | 0.985 / 0.947 | |
 
 Methodology, bundle sizes and how to reproduce: [Benchmarks](docs/benchmarks.md).
 
@@ -260,6 +328,8 @@ symmetry fill. Details: [How it works](docs/how-it-works.md) and [Architecture](
 ## Limitations
 
 - Head and hand depth assume a 65° horizontal field of view (configurable); rotations and expressions do not.
+- Video from another origin must be served with CORS headers (and `crossorigin` on the `<video>`), or the
+  browser won't let MediaPipe read its pixels. DRM-protected video can't be tracked.
 - One face at a time. `tongueOut` is not tracked.
 - The face scan captures skin shape and colour; hair, glasses and eye colour are not captured.
 - VMC output is protocol-tested but not yet verified inside every receiving app; VRM 0.x is unit-tested,

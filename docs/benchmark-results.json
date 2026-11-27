@@ -1,25 +1,52 @@
 {
-  "machine": "Apple M5 Pro, 48 GB, macOS 27.0.1, Chromium 156",
-  "method": "examples/examples/benchmark.html: the built-in avatar animated with known expressions and head motion, rendered at 1280x720 and fed to LikenessTracker as a 30 fps camera stream for 20 s",
+  "machine": "Apple M5 Pro, 48 GB, macOS 27.0.1, Chromium 156 (Claude desktop browser pane, hidden: rendering throttled to about 33 fps)",
+  "method": "examples/benchmark.html: the built-in avatar animated with known expressions and head motion, rendered at 1280x720 and fed to LikenessTracker as a 30 fps camera stream for 20 s; the four runs back to back in one session. Accuracy compares outputs with the pose rendered alignedLagMs earlier (the best-fitting lag).",
   "face_only": {
-    "trackedFps": 29.9,
-    "stagesMs": { "faceDetect": { "avg": 7.05, "p95": 9.9 }, "drive": { "avg": 0.09, "p95": 0.2 }, "frame": { "avg": 0.14, "p95": 0.2 }, "trackTotal": { "avg": 7.19, "p95": 10.0 } },
-    "accuracy": { "headYawErrorDeg": { "median": 1.93, "p95": 4.48 }, "correlationWithGroundTruth": { "jawOpen": 0.798, "mouthSmileLeft": 0.933, "eyeBlinkLeft": 0.983 } }
+    "worker": {
+      "trackedFps": 29.8, "renderLongFrames": 0,
+      "stagesMs": { "detectWait": { "avg": 13.66, "p95": 16.6 }, "faceDetect": { "avg": 13.42, "p95": 16.5 }, "drive": { "avg": 0.15, "p95": 0.3 }, "frame": { "avg": 0.17, "p95": 0.3 }, "trackTotal": { "avg": 13.84, "p95": 16.8 } },
+      "accuracy": { "headYawErrorDeg": { "median": 1.48, "p95": 4.21 }, "correlationWithGroundTruth": { "jawOpen": 0.763, "mouthSmileLeft": 0.947, "eyeBlinkLeft": 0.985 }, "alignedLagMs": 40 }
+    },
+    "main": {
+      "trackedFps": 28.4, "renderLongFrames": 2,
+      "stagesMs": { "faceDetect": { "avg": 9.37, "p95": 12.3 }, "drive": { "avg": 0.19, "p95": 0.2 }, "frame": { "avg": 0.19, "p95": 0.3 }, "trackTotal": { "avg": 9.57, "p95": 12.5 } },
+      "accuracy": { "headYawErrorDeg": { "median": 1.55, "p95": 4.09 }, "correlationWithGroundTruth": { "jawOpen": 0.781, "mouthSmileLeft": 0.86, "eyeBlinkLeft": 0.983 }, "alignedLagMs": 16 }
+    }
   },
-  "face_and_hands": {
-    "trackedFps": 26.1,
-    "stagesMs": { "faceDetect": { "avg": 6.33, "p95": 7.8 }, "handDetect": { "avg": 7.02, "p95": 10.1 }, "drive": { "avg": 0.07, "p95": 0.2 }, "trackTotal": { "avg": 13.44, "p95": 18.4 } }
+  "face_and_hands_no_hands_in_view": {
+    "worker": {
+      "trackedFps": 29.7, "renderLongFrames": 0,
+      "stagesMs": { "detectWait": { "avg": 15.93, "p95": 23.7 }, "faceDetect": { "avg": 15.66, "p95": 23.4 }, "handDetect": { "avg": 18.48, "p95": 21.9 }, "drive": { "avg": 0.17, "p95": 0.3 }, "frame": { "avg": 0.18, "p95": 0.3 }, "trackTotal": { "avg": 16.14, "p95": 23.8 } },
+      "accuracy": { "headYawErrorDeg": { "median": 1.63, "p95": 4.09 }, "correlationWithGroundTruth": { "jawOpen": 0.784, "mouthSmileLeft": 0.919, "eyeBlinkLeft": 0.978 }, "alignedLagMs": 32 }
+    },
+    "main": {
+      "trackedFps": 26.9, "renderLongFrames": 9,
+      "stagesMs": { "faceDetect": { "avg": 9.68, "p95": 11.9 }, "handDetect": { "avg": 8.05, "p95": 12.4 }, "drive": { "avg": 0.15, "p95": 0.2 }, "frame": { "avg": 0.18, "p95": 0.3 }, "trackTotal": { "avg": 12.82, "p95": 22.3 } },
+      "accuracy": { "headYawErrorDeg": { "median": 1.98, "p95": 4.16 }, "correlationWithGroundTruth": { "jawOpen": 0.777, "mouthSmileLeft": 0.845, "eyeBlinkLeft": 0.984 }, "alignedLagMs": 8 }
+    }
   },
+  "interleaved_same_frames_ms": {
+    "note": "Alternating frames of one stream, 25-30 samples each, MediaPipe call to results",
+    "face": { "main": { "p50": 11.9 }, "worker": { "p50": 11.9 } },
+    "face_and_two_hands": { "mainSequential": { "avg": 22.27, "p50": 19.6, "p95": 29.3 }, "workersParallel": { "avg": 21.8, "p50": 17.7, "p95": 28.1 } }
+  },
+  "avatar_mesh_update_ms": { "before": 1.68, "after": 0.42, "note": "LikenessAvatar per tracked frame, real weights (22 of 57 expressions above 0.001)" },
+  "tracker_create_ms_warm_cache": { "worker": 150, "main": 250 },
   "node_micro": {
     "landmarkFit_50comps_468lmk_ms": 2.04,
     "bake_cpu_per_view_ms": 0.52,
-    "fitShading_1500_samples_ms": 1.65
+    "fitShading_1500_samples_ms": 1.65,
+    "evaluateRender_all_57_weights_ms": { "before": 1.42, "after": 1.12 }
   },
   "sizes": {
-    "ict.bin_MB": 10.9,
+    "ict.bin_MB": 8.53,
+    "ict.bin_gzip_MB": 5.86,
+    "ict.bin_before_MB": 10.93,
+    "ict.bin_before_gzip_MB": 7.25,
     "ict-landmarks_kB": 442,
-    "hand_glbs_kB": "see public/hands",
-    "dist_lib_likeness_js_kB": 119,
-    "dist_lib_likeness_js_gzip_kB": 37
+    "detect-worker.js_kB": 194,
+    "detect-worker.js_gzip_kB": 49,
+    "dist_standalone_tracking_main_thread_kB": 65.6,
+    "dist_standalone_tracking_main_thread_before_kB": 244.3
   }
 }

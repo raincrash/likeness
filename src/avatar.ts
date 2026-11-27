@@ -95,8 +95,6 @@ export class LikenessAvatar {
   private content = new THREE.Group();
   private head: THREE.Mesh;
   private bakeGeom: THREE.BufferGeometry;
-  private scratchPos: Float32Array;
-  private scratchNrm: Float32Array;
   private arkitIndex: Int16Array; // ICT expression -> index in ARKIT_BLENDSHAPES (or -1)
   private targetQuat = new THREE.Quaternion();
   private headPos = new THREE.Vector3(0, 0, -0.6);
@@ -150,8 +148,6 @@ export class LikenessAvatar {
     this.bakeGeom = built.bakeGeom;
     this.look.configureHead(this.head);
     this.content.add(this.head);
-    this.scratchPos = new Float32Array(model.nV * 3);
-    this.scratchNrm = new Float32Array(model.nV * 3);
     // Inverse of ictToArkit: both halves of a split shape (browInnerUp_L/_R) take the ARKit value.
     this.arkitIndex = Int16Array.from(model.expressionNames, (n) => {
       const a = ictArkitName(n);
@@ -492,9 +488,7 @@ export class LikenessAvatar {
     const g = this.head.geometry;
     const pos = g.getAttribute("position") as THREE.BufferAttribute;
     const nrm = g.getAttribute("normal") as THREE.BufferAttribute;
-    this.model.evaluate(this.weights, this.scratchPos, this.scratchNrm);
-    this.model.gather(this.scratchPos, pos.array as Float32Array);
-    this.model.gather(this.scratchNrm, nrm.array as Float32Array);
+    this.model.evaluateRender(this.weights, pos.array as Float32Array, nrm.array as Float32Array);
     pos.needsUpdate = true;
     nrm.needsUpdate = true;
   }

@@ -17,6 +17,18 @@ export function assetBase(): string {
   return env?.BASE_URL ?? "/";
 }
 
+/** Library builds ship the MediaPipe worker as <asset base>detect-worker.js (lib-assets.ts turns this on). */
+let bundledWorker = false;
+
+export function useBundledWorker(): void {
+  bundledWorker = true;
+}
+
+/** URL of the library build's detection worker, or null when running from source (the bundler handles it). */
+export function bundledWorkerUrl(): string | null {
+  return bundledWorker ? assetUrl("detect-worker.js") : null;
+}
+
 /** e.g. assetUrl("ict") -> "<base>ict" (no trailing slash). */
 export function assetUrl(path: string): string {
   return assetBase() + path.replace(/^\//, "").replace(/\/$/, "");

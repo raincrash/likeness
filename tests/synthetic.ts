@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { LandmarkModel, type LandmarkModelMeta } from "../src/landmarkModel.js";
-import type { TrackFrame } from "../src/tracker.js";
+import type { TrackFrame } from "../src/mpConstants.js";
 
 /** Shared helpers for the driver/frame tests: synthetic MediaPipe frames from the canonical face. */
 
@@ -37,7 +37,7 @@ export function yaw(points: Float32Array, deg: number): Float32Array {
 }
 
 export function trackFrame(points: Float32Array, blendshapes: Record<string, number> = {}): TrackFrame {
-  return { points, normalized: [], blendshapes };
+  return { points, normalized: new Float32Array(0), blendshapes };
 }
 
 export function loadLiteModel(): LandmarkModel {

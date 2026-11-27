@@ -2,7 +2,9 @@
 // neutral mesh + linear identity shapes + 53 ARKit-style expression blendshapes.
 // Expressions are stored sparse and evaluated on the CPU each frame.
 
-interface ArrayInfo { dtype: "float32" | "uint32" | "int16"; offset: number; shape: number[] }
+interface ArrayInfo { dtype: "float32" | "uint32" | "uint16" | "int16" | "int8"; offset: number; shape: number[] }
+
+const ARRAY_TYPES = { float32: Float32Array, uint32: Uint32Array, uint16: Uint16Array, int16: Int16Array, int8: Int8Array };
 
 export interface IctMeta {
   n_verts: number;
@@ -19,6 +21,15 @@ export interface IctMeta {
 }
 
 interface SparseShape { index: Uint32Array; delta: Float32Array; normal: Float32Array }
+
+/** Render-vertex (UV-split) copies of the base mesh and the expressions, for evaluateRender(). */
+interface RenderShapes {
+  base: Float32Array;
+  normals: Float32Array;
+  /** Per expression: render-vertex offsets (r * 3) and their deltas, 3 per offset. */
+  expressions: { offset: Uint32Array; delta: Float32Array; normal: Float32Array }[];
+  baseVersion: number;
+}
 
 export class IctModel {
   readonly nV: number;
@@ -40,12 +51,25 @@ export class IctModel {
   /** Neutral + identity; updated by setIdentity. */
   readonly base: Float32Array;
   readonly baseNormals: Float32Array;
+  /** Bumped when base or baseNormals change, so evaluateRender() re-gathers them. */
+  private baseVersion = 0;
+  private renderShapes: RenderShapes | null = null;
 
   constructor(readonly meta: IctMeta, buf: ArrayBuffer) {
-    const view = <T extends Float32Array | Uint32Array | Int16Array>(name: string, Ctor: new (b: ArrayBuffer, o: number, n: number) => T) => {
+    // Arrays are stored at their own dtype (indices as uint16 when they fit, normal deltas as int8):
+    // read them as stored, widening indices to Uint32Array.
+    const raw = (name: string) => {
       const a = meta.arrays[name];
       if (!a) throw new Error(`ict.bin is missing array "${name}"`);
+      const Ctor = ARRAY_TYPES[a.dtype];
+      if (!Ctor) throw new Error(`ict.bin array "${name}" has unsupported dtype ${a.dtype}`);
       return new Ctor(buf, a.offset, a.shape.reduce((x, y) => x * y, 1));
+    };
+    const view = <T extends Float32Array | Uint32Array | Int16Array>(name: string, Ctor: new (b: ArrayBuffer, o: number, n: number) => T): T => {
+      const a = raw(name);
+      if (a instanceof Ctor) return a;
+      if (Ctor === (Uint32Array as unknown) && (a instanceof Uint16Array)) return Uint32Array.from(a) as T;
+      throw new Error(`ict.bin array "${name}" is ${meta.arrays[name].dtype}, expected ${Ctor.name}`);
     };
     this.nV = meta.n_verts;
     this.expressionNames = meta.expression_names;
@@ -62,7 +86,7 @@ export class IctModel {
     const ptr = view("expr_ptr", Uint32Array);
     const index = view("expr_index", Uint32Array);
     const delta = view("expr_delta", Int16Array);
-    const ndelta = view("expr_normal_delta", Int16Array);
+    const ndelta = raw("expr_normal_delta"); // int16, or int8 since the 8-bit export
     for (let e = 0; e < this.nE; e++) {
       const a = ptr[e], b = ptr[e + 1];
       const s = meta.expr_scales[e], ns = meta.expr_normal_scales[e];
@@ -97,6 +121,7 @@ export class IctModel {
 
   /** Applies identity coefficients to the base mesh. Normals must be recomputed by the caller. */
   setIdentity(coeffs: ArrayLike<number>): void {
+    this.baseVersion++;
     this.base.set(this.neutral);
     for (let k = 0; k < Math.min(coeffs.length, this.nI); k++) {
       const c = coeffs[k];
@@ -108,6 +133,7 @@ export class IctModel {
 
   /** Area-weighted vertex normals of `positions` (nV*3) over the position topology. */
   computeNormals(positions: Float32Array, out: Float32Array): void {
+    if (out === this.baseNormals) this.baseVersion++;
     out.fill(0);
     const t = this.tris;
     for (let f = 0; f < t.length; f += 3) {
@@ -152,6 +178,67 @@ export class IctModel {
         }
       }
     }
+  }
+
+  /**
+   * evaluate() + gather() in one pass, straight into render-vertex buffers (nRender*3): base +
+   * sum_e w_e * delta_e, normals left unnormalised. Expressions with |w| < minWeight are skipped
+   * (1e-3 moves a vertex by microns).
+   */
+  evaluateRender(weights: ArrayLike<number>, positions: Float32Array, normals: Float32Array, minWeight = 1e-3): void {
+    const R = this.renderData();
+    positions.set(R.base);
+    normals.set(R.normals);
+    for (let e = 0; e < this.nE; e++) {
+      const w = weights[e];
+      if (!(w >= minWeight || w <= -minWeight)) continue;
+      const { offset, delta, normal } = R.expressions[e];
+      for (let j = 0, k = 0; j < offset.length; j++, k += 3) {
+        const o = offset[j];
+        positions[o] += w * delta[k];
+        positions[o + 1] += w * delta[k + 1];
+        positions[o + 2] += w * delta[k + 2];
+        normals[o] += w * normal[k];
+        normals[o + 1] += w * normal[k + 1];
+        normals[o + 2] += w * normal[k + 2];
+      }
+    }
+  }
+
+  private renderData(): RenderShapes {
+    let R = this.renderShapes;
+    if (!R) {
+      // Position vertex -> its render vertices (CSR), to expand the sparse expressions once.
+      const map = this.uvVertex, nR = map.length;
+      const start = new Uint32Array(this.nV + 1);
+      for (let r = 0; r < nR; r++) start[map[r] + 1]++;
+      for (let v = 0; v < this.nV; v++) start[v + 1] += start[v];
+      const fill = start.slice(0, this.nV), renderOf = new Uint32Array(nR);
+      for (let r = 0; r < nR; r++) renderOf[fill[map[r]]++] = r;
+      const expressions = this.expressions.map(({ index, delta, normal }) => {
+        let n = 0;
+        for (let j = 0; j < index.length; j++) n += start[index[j] + 1] - start[index[j]];
+        const out = { offset: new Uint32Array(n), delta: new Float32Array(n * 3), normal: new Float32Array(n * 3) };
+        let i = 0;
+        for (let j = 0; j < index.length; j++) {
+          for (let s = start[index[j]]; s < start[index[j] + 1]; s++, i++) {
+            out.offset[i] = renderOf[s] * 3;
+            for (let c = 0; c < 3; c++) {
+              out.delta[i * 3 + c] = delta[j * 3 + c];
+              out.normal[i * 3 + c] = normal[j * 3 + c];
+            }
+          }
+        }
+        return out;
+      });
+      R = this.renderShapes = { base: new Float32Array(nR * 3), normals: new Float32Array(nR * 3), expressions, baseVersion: -1 };
+    }
+    if (R.baseVersion !== this.baseVersion) {
+      this.gather(this.base, R.base);
+      this.gather(this.baseNormals, R.normals);
+      R.baseVersion = this.baseVersion;
+    }
+    return R;
   }
 }
 

@@ -69,9 +69,16 @@ calibration, and bakes the video into the head's UV texture with `TextureBaker` 
 ## One frame, step by step
 
 1. `LikenessTracker` (`src/tracking.ts`) gets a new video frame through `requestVideoFrameCallback`
-   (falling back to `requestAnimationFrame`) and calls `process(video, t)`.
+   (falling back to `requestAnimationFrame`). By default MediaPipe runs in two Web Workers
+   (`src/detectWorker.ts`, driven by `src/detectClient.ts`), one per task: the tracker wraps the frame in a
+   `VideoFrame` (GPU-backed, no copy), transfers it to the face worker and a clone to the hand worker, and
+   both detect in parallel while the main thread keeps rendering. A frame that arrives while the previous one
+   is still in flight waits and is picked up as soon as it's done, so latency never queues up. Without
+   worker support (or with `worker: false`) the same detectors run on the main thread, one after the other,
+   and MediaPipe's JS is only loaded then.
 2. `FaceTracker` (`src/tracker.ts`) runs MediaPipe's face landmarker: 478 landmarks, converted to centred
-   pixel coordinates (x right, y up, z towards the camera), plus 52 blendshape scores.
+   pixel coordinates (x right, y up, z towards the camera), plus 52 blendshape scores. Only these arrays
+   cross back from the worker.
 3. `FaceDriver.update` (`src/driver.ts`):
    - turns scores into prior weights relative to the calibrated neutral, with gains;
    - aligns the observed landmarks to the landmark model on 21 rigid upper-face points (`similarity` in
@@ -82,13 +89,16 @@ calibration, and bakes the video into the head's UV texture with `TextureBaker` 
    - filters all weights with a One Euro filter.
 4. If hands are on, `HandTracker` (`src/handTracker.ts`) runs MediaPipe's hand landmarker on the same frame
    and timestamp, and `HandFilterBank` (`src/handFilter.ts`) places each hand in the camera frame
-   (`estimatePalm` in `src/handMath.ts`) and smooths it.
+   (`estimatePalm` in `src/handMath.ts`) and smooths it. With no hand in view for 15 frames, the tracker
+   looks for new hands (MediaPipe's palm detector, the costly part) only every third frame, and goes back to
+   every frame as soon as one appears.
 5. `frameBuilder` (`src/frameBuilder.ts`) converts ICT weights to the 52 ARKit names (`ictToArkit`), turns the
    similarity into a head quaternion and position (`headPose`, pinhole with the assumed FOV) and assembles the
    frame.
 6. The tracker emits `frame`. Consumers:
    - `LikenessAvatar.apply` (`src/avatar.ts`) maps ARKit names back to ICT expressions, evaluates the sparse
-     blendshapes on the CPU and updates the mesh, head pivot and `HandRig` (`src/hands.ts`);
+     blendshapes on the CPU straight into the render buffers (`IctModel.evaluateRender`, skipping expressions
+     under 0.001) and updates the mesh, head pivot and `HandRig` (`src/hands.ts`);
    - `VrmAvatar.apply` (`src/vrm.ts`) maps ARKit to perfect-sync or VRM preset expressions
      (`src/vrmMapping.ts`), splits the head rotation between neck and head, sets gaze, and solves arms and
      fingers;

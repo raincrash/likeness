@@ -30,8 +30,9 @@ likeness fetches data files at runtime:
 | Files | Needed by | Size |
 |---|---|---|
 | `ict/ict-landmarks.json`, `ict/ict-landmarks.bin` | `LikenessTracker` | 3.5 kB + 438 kB |
-| `ict/ict.json`, `ict/ict.bin` | `LikenessAvatar` (and so `<likeness-avatar>`) | 30 kB + 10.9 MB |
+| `ict/ict.json`, `ict/ict.bin` | `LikenessAvatar` (and so `<likeness-avatar>`) | 30 kB + 8.5 MB |
 | `hands/left.glb`, `hands/right.glb` | `LikenessAvatar` hand rendering, loaded on first hand | 95 kB + 94 kB |
+| `detect-worker.js` | `LikenessTracker`: runs MediaPipe in a Web Worker (it bundles MediaPipe's JS) | 194 kB (49 kB gzip) |
 
 The build copies them to `dist/lib/assets/` and `dist/standalone/assets/`.
 
@@ -71,5 +72,11 @@ const tracker = await LikenessTracker.create({
   handModelUrl: "/mediapipe/hand_landmarker.task",
 });
 ```
+
+The workers load MediaPipe's ES-module wasm build (`vision_wasm_module_internal.*`, in the same folder); the
+main-thread fallback loads `vision_wasm_internal.*`. Copy the whole folder.
+
+With a Content Security Policy, allow the worker script (`worker-src 'self'`, or wherever `detect-worker.js`
+lives). If the worker can't start, the tracker falls back to the main thread and logs a warning.
 
 Pages need a secure context for camera access: `https://` or `localhost`.

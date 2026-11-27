@@ -2,8 +2,10 @@
   "name": "likeness",
   "private": true,
   "version": "0.1.0",
-  "description": "Webcam face, lip-sync and hand tracking that drives 3D avatars (yours, VRM, or VTuber apps via VMC), live in the browser",
+  "description": "Markerless motion capture in the browser for any video source (webcam, video files, screen or WebRTC streams): face, lip-sync and hand tracking that drives 3D avatars, VRM models, VTuber apps and game engines",
   "keywords": [
+    "motion-capture",
+    "mocap",
     "face-tracking",
     "avatar",
     "vtuber",

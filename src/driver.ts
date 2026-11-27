@@ -4,7 +4,7 @@ import {
   LinearFitter, BoundedRidge, OneEuro, similarity, applySimilarity, transpose, defaultFitOptions,
   type FitOptions, type Mat3,
 } from "./solver.js";
-import { RIGID_LANDMARKS, FaceLandmarker, type TrackFrame } from "./tracker.js";
+import { RIGID_LANDMARKS, FACE_OVAL_LANDMARKS, LIP_LANDMARKS, type TrackFrame } from "./mpConstants.js";
 
 export interface DriveOptions extends FitOptions {
   /** Full-face landmark refinement of all expression weights. */
@@ -119,8 +119,8 @@ export class FaceDriver {
   constructor(readonly lm: LandmarkModel, mediapipeNames: readonly string[]) {
     const nL = lm.count, nE = lm.nE;
 
-    const oval = new Set(FaceLandmarker.FACE_LANDMARKS_FACE_OVAL.flatMap((c) => [c.start, c.end]));
-    const lips = new Set(FaceLandmarker.FACE_LANDMARKS_LIPS.flatMap((c) => [c.start, c.end]));
+    const oval = new Set(FACE_OVAL_LANDMARKS);
+    const lips = new Set(LIP_LANDMARKS);
     const jaw = new Set(JAW_LANDMARKS);
     this.lmWeights = new Float32Array(nL);
     const rigid: number[] = [];

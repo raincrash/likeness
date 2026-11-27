@@ -149,6 +149,28 @@ function delit(nz: ShadingNormalizer, normals: Float32Array, colors: Float32Arra
   check("light / skin-ref vertices", mesh.lightVerts.length > 500 && mesh.skinRefUv.length > 40,
     `${mesh.lightVerts.length} light verts, ${mesh.skinRefUv.length / 2} skin-ref verts, ${mesh.occluderVerts.length} occluders`);
 
+  // evaluateRender (fused, render-vertex space) matches evaluate + gather, and is what the avatar runs per frame.
+  {
+    const w = new Float32Array(model.nE);
+    for (let e = 0; e < model.nE; e++) w[e] = ((e * 37) % 11) / 10 - 0.2;
+    const pV = new Float32Array(model.nV * 3), nV = new Float32Array(model.nV * 3);
+    const pRef = new Float32Array(nR * 3), nRef = new Float32Array(nR * 3), pOut = new Float32Array(nR * 3), nOut = new Float32Array(nR * 3);
+    model.evaluate(w, pV, nV);
+    model.gather(pV, pRef);
+    model.gather(nV, nRef);
+    model.evaluateRender(w, pOut, nOut, 0);
+    let err = 0;
+    for (let i = 0; i < pOut.length; i++) err = Math.max(err, Math.abs(pOut[i] - pRef[i]), Math.abs(nOut[i] - nRef[i]));
+    const N = 40;
+    let t0 = performance.now();
+    for (let i = 0; i < N; i++) { model.evaluate(w, pV, nV); model.gather(pV, pRef); model.gather(nV, nRef); }
+    const before = (performance.now() - t0) / N;
+    t0 = performance.now();
+    for (let i = 0; i < N; i++) model.evaluateRender(w, pOut, nOut);
+    const after = (performance.now() - t0) / N;
+    check("evaluateRender matches evaluate + gather", err < 1e-5, `max diff ${err.toExponential(1)}; ${before.toFixed(2)} ms -> ${after.toFixed(2)} ms per frame`);
+  }
+
   // Synthetic frame: head turned 25 deg, lit by LIGHT in camera space, rendered by splatting into 160x90.
   const pos = new Float32Array(nR * 3), nrm = new Float32Array(nR * 3), nrmV = new Float32Array(model.nV * 3);
   model.computeNormals(model.base, nrmV);
