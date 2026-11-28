@@ -17,13 +17,6 @@
   <img src="docs/images/wireframe-three-quarter.jpg" width="100%" alt="Wireframe of the built-in head mid-word, with both hands tracked" />
 </p>
 
-> [!IMPORTANT]
-> **likeness is a motion-capture rig for any streamable video source.** Point it at a webcam, a recorded
-> video, a screen capture, a WebRTC call or a canvas, and it streams back performance data, frame by frame:
-> 52 ARKit blendshapes, head pose and 21 joints per hand, in metres. Developers can drop it into avatars,
-> games, video calls, animation pipelines and research tools with a few lines of TypeScript, or receive it
-> in any engine over VMC or WebSocket.
-
 It tracks the face, lips and both hands with MediaPipe, refines the result with a morphable face model, and
 emits a compact, standard frame per video frame. Render it with the built-in avatar, drive your own VRM, or
 stream it to VSeeFace, VNyan, Warudo, Unity, Unreal, Godot, Blender or your own code.
@@ -47,24 +40,6 @@ a `MediaStream`, it can be motion-captured.
 The demo's built-in *demo face* uses that last row: an animated synthetic head rendered to a canvas and
 tracked exactly like a camera.
 
-## What developers build with it
-
-- **VTubing and live streaming.** Drive a VRM or a custom character in the browser, or send the motion to
-  VSeeFace, VNyan, Warudo and other VMC apps; add the stage mode to OBS as a browser source.
-- **Avatars in video calls and social apps.** Track the local camera, or a remote WebRTC stream, and show an
-  avatar instead of the face, keeping the real video on the device.
-- **Game and engine input.** Stream faces and hands into Unity, Unreal, Godot or Blender over VMC or plain
-  WebSocket JSON, for character control, NPC puppeteering or in-engine previews.
-- **Animation and previs from footage.** Run recorded performances through `process()` and keep the
-  per-frame ARKit curves, head pose and finger joints for retargeting onto rigs, keyframe cleanup or lip-sync.
-- **Digital humans and conversational agents.** Puppeteer talking heads from a performer's camera, or use a
-  person's recorded video as reference motion.
-- **Hand and face interaction.** Gesture controls, hands-free UI and expression-driven effects, from 21
-  metric joints per hand and 52 named expression weights.
-- **AR effects and try-on.** Head pose in metres plus the fitted face shape anchor glasses, masks and makeup.
-- **Research and analytics.** Batch-extract expression and pose time series from video for datasets,
-  user studies or lip-sync evaluation, with a documented, versioned frame format.
-
 ## Features
 
 - **Face tracking with real lip-sync.** MediaPipe's blendshape scores are refined by a landmark fit
@@ -86,20 +61,18 @@ tracked exactly like a camera.
 
 <p align="center">
   <img src="docs/images/demo-wireframe-hands.jpg" width="49%" alt="Demo app in wireframe: Tracking tab, two hands tracked" />
-  <img src="docs/images/vrm-wireframe.jpg" width="49%" alt="Sample VRM in wireframe with arms and fingers driven" />
   <img src="docs/images/demo-vrm.jpg" width="49%" alt="Sample VRM driven live: peace sign and a wave" />
+  <img src="docs/images/teeth-wireframe.jpg" width="49%" alt="Wireframe close-up mid-word: jaw and lips open the mouth" />
   <img src="docs/images/demo-stream.jpg" width="49%" alt="Demo app: Stream tab with the live frame JSON" />
-  <img src="docs/images/vrm-angle-1.jpg" width="49%" alt="Sample VRM from a three-quarter angle: elbows clear of the body, hands in front of the chest" />
-  <img src="docs/images/vrm-angle-2.jpg" width="49%" alt="Sample VRM from a higher three-quarter angle on the other side" />
 </p>
-<p align="center">
-  <img src="docs/images/teeth-wireframe.jpg" width="98%" alt="Wireframe close-up mid-word: jaw and lips open the mouth, with teeth and mouth interior visible" />
-</p>
-<p align="center"><sub>
-  Mid-word close-up: the tracked jaw and lip shapes open the full mouth interior, teeth and gums included.
-  The performer in these shots is the demo app's built-in <em>demo face</em>, an animated synthetic head
-  rendered to video and tracked by MediaPipe exactly like a webcam.
-</sub></p>
+<p align="center"><sub>The performer is the demo app's built-in <em>demo face</em>: an animated synthetic head rendered to video and tracked exactly like a webcam.</sub></p>
+
+## Photoreal avatars
+
+likeness also drives Gaussian-splat avatars of real people.
+[likeness-capture](https://github.com/raincrash/likeness-capture) turns a video into a dataset with the same
+tracker and face model, and [likeness-splat](https://github.com/raincrash/likeness-splat) trains the avatar and
+drives it live with likeness. likeness-splat's README walks through all three.
 
 ## Quick start
 
@@ -299,17 +272,9 @@ Methodology, bundle sizes and how to reproduce: [Benchmarks](docs/benchmarks.md)
 
 ## How it works
 
-1. **MediaPipe** detects 478 face landmarks, 52 blendshape scores and 21 joints per hand.
-2. **Alignment.** The landmarks are embedded on the ICT-FaceKit morphable model; a closed-form rigid fit
-   on stable upper-face points gives the head pose.
-3. **Calibration and lip fit.** A per-user neutral baseline is removed, then mouth and jaw shapes are solved
-   from lip and chin motion with a bounded, per-shape regularised least-squares fit.
-4. **Filtering.** One Euro filters smooth a still face without lagging fast speech; hand fingers get
-   anatomical joint constraints.
-5. **Output.** Weights are mapped to ARKit names and packed, with head and hands, into a `LikenessFrame`.
-
-The face scan adds an identity fit, projective texture baking with spherical-harmonic delighting and a
-symmetry fill. Details: [How it works](docs/how-it-works.md) and [Architecture](docs/architecture.md).
+MediaPipe landmarks and blendshapes, refined by a fit against the ICT-FaceKit morphable model (head pose, a
+calibrated neutral, lip and jaw shapes), filtered and packed into a `LikenessFrame`. Details:
+[How it works](docs/how-it-works.md).
 
 ## Documentation
 

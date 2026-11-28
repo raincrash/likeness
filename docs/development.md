@@ -71,4 +71,5 @@ uv run tools/convert_ict.py ../ICT-FaceKit --n-identity 40    # more identity co
 
 Other options: `--out <dir>`, `--canonical <obj>` (default `assets/canonical_face_model.obj`) and
 `--max-dist-mm` (landmarks farther than this from the ICT surface are dropped; default 10). Run
-`npm test` afterwards: the landmark-model test checks `ict-landmarks.*` against `ict.*`.
+`npm test` afterwards: the landmark-model test checks `ict-landmarks.*` against `ict.*`. Then refresh the copy
+that [likeness-capture](https://github.com/raincrash/likeness-capture) bundles: `uv run python scripts/sync_ict.py ../likeness` there.
